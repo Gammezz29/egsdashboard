@@ -105,12 +105,12 @@ export default function AgentDetail() {
                 +1 202 858 1199
               </span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <code className="text-xs">agent_8101k7me0r3ze5taw3w47tcseedd</code>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6" // Smaller, icon-only button
+                className="h-6 w-6"
                 onClick={handleCopyAgentId}
               >
                 <Copy className="w-3 h-3" />
@@ -240,7 +240,7 @@ export default function AgentDetail() {
                 <div className="flex items-center gap-2">
                   <Checkbox id="disable-interruptions" />
                   <Label htmlFor="disable-interruptions" className="text-sm font-normal">
-                    Select this box to prevent users from interrupting while the first message is being delivered.
+                    Disable interruptions during first message
                   </Label>
                 </div>
                 <Button variant="link" size="sm" className="h-auto p-0 text-xs gap-1">
