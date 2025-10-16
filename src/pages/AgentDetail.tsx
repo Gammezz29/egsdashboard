@@ -96,7 +96,7 @@ export default function AgentDetail() {
               </DropdownMenu>
             </div>
           </div>
-          <div className="mt-2">
+          <div className="mt-2 flex flex-col items-center">
             <div className="flex items-center gap-3">
               <h2 className="text-2xl font-bold">Howard University</h2>
               <Badge variant="outline">Public</Badge>
