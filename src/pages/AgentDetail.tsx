@@ -389,8 +389,8 @@ Tone & Speaking Style
               Widget configuration coming soon...
             </div>
           </TabsContent>
-        </Tabs>
-      </div>
+        </div>
+      </Tabs>
     </div>
   );
 }
