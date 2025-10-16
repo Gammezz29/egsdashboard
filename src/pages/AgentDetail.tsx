@@ -60,91 +60,96 @@ export default function AgentDetail() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-10">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Button
-                variant="link"
-                size="sm"
-                onClick={() => navigate("/agents")}
-                className="p-0 h-auto text-muted-foreground hover:text-foreground"
-              >
-                Agents
-              </Button>
-              <span>/</span>
-              <h1 className="text-sm font-medium text-foreground">Howard University</h1>
+      <Tabs defaultValue="agent" className="w-full">
+        {/* Header (Sticky) */}
+        <div className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-10">
+          <div className="container mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={() => navigate("/agents")}
+                  className="p-0 h-auto text-muted-foreground hover:text-foreground"
+                >
+                  Agents
+                </Button>
+                <span>/</span>
+                <h1 className="text-sm font-medium text-foreground">Howard University</h1>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button variant="outline" className="gap-2">
+                  <Activity className="w-4 h-4" />
+                  Test AI agent
+                </Button>
+                <Button variant="outline">Copy link</Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem>Edit</DropdownMenuItem>
+                    <DropdownMenuItem>Duplicate</DropdownMenuItem>
+                    <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <Button variant="outline" className="gap-2">
-                <Activity className="w-4 h-4" />
-                Test AI agent
-              </Button>
-              <Button variant="outline">Copy link</Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8">
-                    <MoreHorizontal className="w-4 h-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem>Edit</DropdownMenuItem>
-                  <DropdownMenuItem>Duplicate</DropdownMenuItem>
-                  <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+            
+            {/* Agent Details Block (Centered) */}
+            <div className="mt-2 flex flex-col items-center">
+              <div className="flex items-center gap-3">
+                <h2 className="text-2xl font-bold">Howard University</h2>
+                <Badge variant="outline">Public</Badge>
+                <Badge variant="secondary" className="text-sm font-normal flex items-center gap-1 px-2 py-1">
+                  <Phone className="w-3 h-3" />
+                  +1 202 858 1199
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                <code className="text-xs">agent_8101k7me0r3ze5taw3w47tcseedd</code>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={handleCopyAgentId}
+                >
+                  <Copy className="w-3 h-3" />
+                </Button>
+              </div>
             </div>
           </div>
-          <div className="mt-2 flex flex-col items-center">
-            <div className="flex items-center gap-3">
-              <h2 className="text-2xl font-bold">Howard University</h2>
-              <Badge variant="outline">Public</Badge>
-              <span className="text-sm text-muted-foreground flex items-center gap-1">
-                <Phone className="w-3 h-3" />
-                +1 202 858 1199
-              </span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <code className="text-xs">agent_8101k7me0r3ze5taw3w47tcseedd</code>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={handleCopyAgentId}
-              >
-                <Copy className="w-3 h-3" />
-              </Button>
-            </div>
+          
+          {/* Tabs List (Centered) */}
+          <div className="container mx-auto px-6 flex justify-center">
+            <TabsList className="mb-0">
+              <TabsTrigger value="agent">Agent</TabsTrigger>
+              <TabsTrigger value="workflow">
+                Agent Workflow
+                <Badge variant="secondary" className="ml-2 text-xs">
+                  New
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="voice">Voice</TabsTrigger>
+              <TabsTrigger value="analysis">Analysis</TabsTrigger>
+              <TabsTrigger value="tests">
+                Tests
+                <Badge variant="secondary" className="ml-2 text-xs">
+                  New
+                </Badge>
+              </TabsTrigger>
+              <TabsTrigger value="security">Security</TabsTrigger>
+              <TabsTrigger value="advanced">Advanced</TabsTrigger>
+              <TabsTrigger value="widget">Widget</TabsTrigger>
+            </TabsList>
           </div>
         </div>
-      </div>
 
-      {/* Content */}
-      <div className="container mx-auto px-6 py-6 max-w-4xl">
-        <Tabs defaultValue="agent" className="w-full">
-          <TabsList className="mb-6">
-            <TabsTrigger value="agent">Agent</TabsTrigger>
-            <TabsTrigger value="workflow">
-              Agent Workflow
-              <Badge variant="secondary" className="ml-2 text-xs">
-                New
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="voice">Voice</TabsTrigger>
-            <TabsTrigger value="analysis">Analysis</TabsTrigger>
-            <TabsTrigger value="tests">
-              Tests
-              <Badge variant="secondary" className="ml-2 text-xs">
-                New
-              </Badge>
-            </TabsTrigger>
-            <TabsTrigger value="security">Security</TabsTrigger>
-            <TabsTrigger value="advanced">Advanced</TabsTrigger>
-            <TabsTrigger value="widget">Widget</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="agent" className="space-y-8">
+        {/* Content (TabsContent) */}
+        <div className="container mx-auto px-6 py-6 max-w-4xl">
+          <TabsContent value="agent" className="space-y-8 mt-0">
             {/* Agent Language */}
             <Card className="border-border bg-card">
               <CardHeader>
