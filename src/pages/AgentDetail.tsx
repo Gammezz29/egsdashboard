@@ -6,7 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
+import { Switch } from "@/components/ui/switch"; // Keep Switch for other uses if any, or remove if not needed elsewhere
+import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
 import {
   Select,
   SelectContent,
@@ -95,21 +96,21 @@ export default function AgentDetail() {
               </DropdownMenu>
             </div>
           </div>
-          <div className="flex items-center justify-between mt-2">
+          <div className="mt-2">
             <div className="flex items-center gap-3">
               <h2 className="text-2xl font-bold">Howard University</h2>
               <Badge variant="outline">Public</Badge>
-              <Button variant="ghost" size="sm" className="gap-2">
-                <Phone className="w-4 h-4" />
+              <span className="text-sm text-muted-foreground flex items-center gap-1">
+                <Phone className="w-3 h-3" />
                 +1 202 858 1199
-              </Button>
+              </span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
               <code className="text-xs">agent_8101k7me0r3ze5taw3w47tcseedd</code>
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6 px-2"
+                size="icon"
+                className="h-6 w-6" // Smaller, icon-only button
                 onClick={handleCopyAgentId}
               >
                 <Copy className="w-3 h-3" />
@@ -206,7 +207,7 @@ export default function AgentDetail() {
               <CardHeader>
                 <CardTitle>First message</CardTitle>
                 <CardDescription>
-                  The first message the agent will say. If empty, the agent will wait for the user to start the conversation.
+                  The first message the agent will say. If empty, the agent will wait for the user to start the conversation. You can specify different presets for each language.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -237,9 +238,9 @@ export default function AgentDetail() {
                   className="min-h-[80px]"
                 />
                 <div className="flex items-center gap-2">
-                  <Switch id="disable-interruptions" />
+                  <Checkbox id="disable-interruptions" /> {/* Changed to Checkbox */}
                   <Label htmlFor="disable-interruptions" className="text-sm font-normal">
-                    Disable interruptions during first message
+                    Select this box to prevent users from interrupting while the first message is being delivered.
                   </Label>
                 </div>
                 <Button variant="link" size="sm" className="h-auto p-0 text-xs gap-1">
@@ -277,7 +278,7 @@ Tone & Speaking Style
                   className="min-h-[300px] font-mono text-xs"
                 />
                 <div className="flex items-center gap-2">
-                  <Switch id="ignore-personality" />
+                  <Checkbox id="ignore-personality" /> {/* Changed to Checkbox */}
                   <Label htmlFor="ignore-personality" className="text-sm font-normal">
                     Ignore default personality
                   </Label>
