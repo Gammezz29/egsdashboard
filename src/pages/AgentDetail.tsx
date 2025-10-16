@@ -6,8 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch"; // Keep Switch for other uses if any, or remove if not needed elsewhere
-import { Checkbox } from "@/components/ui/checkbox"; // Import Checkbox
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -238,7 +238,7 @@ export default function AgentDetail() {
                   className="min-h-[80px]"
                 />
                 <div className="flex items-center gap-2">
-                  <Checkbox id="disable-interruptions" /> {/* Changed to Checkbox */}
+                  <Checkbox id="disable-interruptions" />
                   <Label htmlFor="disable-interruptions" className="text-sm font-normal">
                     Select this box to prevent users from interrupting while the first message is being delivered.
                   </Label>
@@ -278,7 +278,7 @@ Tone & Speaking Style
                   className="min-h-[300px] font-mono text-xs"
                 />
                 <div className="flex items-center gap-2">
-                  <Checkbox id="ignore-personality" /> {/* Changed to Checkbox */}
+                  <Checkbox id="ignore-personality" />
                   <Label htmlFor="ignore-personality" className="text-sm font-normal">
                     Ignore default personality
                   </Label>
