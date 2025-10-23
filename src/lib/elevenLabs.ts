@@ -56,13 +56,16 @@ const getHeaders = (apiKey: string): HeadersInit => ({
 });
 
 const parseDashboardResponse = (data: DashboardResponse): ElevenLabsMetrics => {
-  const callsChart = data.charts.find((c) => c.name === "Calls");
-  const successChart = data.charts.find((c) => c.name === "Success Rate");
+  const totals = data?.totals || {};
+  const charts = data?.charts || [];
+
+  const callsChart = charts.find((c) => c.name === "Calls");
+  const successChart = charts.find((c) => c.name === "Success Rate");
 
   return {
-    totalCalls: data.totals.total_calls,
-    averageDurationSeconds: data.totals.average_duration_seconds,
-    successRate: data.totals.success_rate,
+    totalCalls: totals.total_calls ?? 0,
+    averageDurationSeconds: totals.average_duration_seconds ?? 0,
+    successRate: totals.success_rate ?? 0,
     callsByDay:
       callsChart?.data.map((p) => ({
         date: p.date,
