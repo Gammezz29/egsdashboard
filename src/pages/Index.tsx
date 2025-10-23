@@ -1,47 +1,35 @@
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useElevenLabsMetrics } from "@/hooks/useElevenLabsMetrics";
+import { useElevenLabsAgents } from "@/hooks/useElevenLabsAgents";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Terminal, Loader2 } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { MetricRange } from "@/lib/elevenLabs";
 
-// Mock data for charts
-const callsData = [
-  { date: "Sep 16", calls: 70 },
-  { date: "Sep 18", calls: 65 },
-  { date: "Sep 20", calls: 45 },
-  { date: "Sep 22", calls: 105 },
-  { date: "Sep 24", calls: 85 },
-  { date: "Sep 26", calls: 75 },
-  { date: "Sep 28", calls: 55 },
-  { date: "Sep 30", calls: 40 },
-  { date: "Oct 2", calls: 95 },
-  { date: "Oct 4", calls: 65 },
-  { date: "Oct 6", calls: 115 },
-  { date: "Oct 8", calls: 55 },
-  { date: "Oct 10", calls: 75 },
-  { date: "Oct 12", calls: 90 },
-  { date: "Oct 14", calls: 65 },
-  { date: "Oct 16", calls: 50 },
-];
+const formatDuration = (seconds: number) => {
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return "0:00";
+  }
 
-const successData = [
-  { date: "Sep 16", success: 85, fail: 15 },
-  { date: "Sep 18", success: 75, fail: 25 },
-  { date: "Sep 20", success: 90, fail: 10 },
-  { date: "Sep 22", success: 80, fail: 20 },
-  { date: "Sep 24", success: 95, fail: 5 },
-  { date: "Sep 26", success: 88, fail: 12 },
-  { date: "Sep 28", success: 92, fail: 8 },
-  { date: "Sep 30", success: 78, fail: 22 },
-  { date: "Oct 2", success: 96, fail: 4 },
-  { date: "Oct 4", success: 85, fail: 15 },
-  { date: "Oct 6", success: 90, fail: 10 },
-  { date: "Oct 8", success: 70, fail: 30 },
-  { date: "Oct 10", success: 88, fail: 12 },
-  { date: "Oct 12", success: 92, fail: 8 },
-  { date: "Oct 14", calls: 82, fail: 18 },
-  { date: "Oct 16", calls: 95, fail: 5 },
-];
+  const totalSeconds = Math.round(seconds);
+  const minutes = Math.floor(totalSeconds / 60);
+  const remainder = totalSeconds % 60;
+
+  return `${minutes}:${remainder.toString().padStart(2, "0")}`;
+};
+
+const formatPercentage = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0%";
+  }
+
+  const rounded = Number(value.toFixed(1));
+  return `${rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)}%`;
+};
 
 const agentsData = [
   { name: "Grace Marys", calls: 429, minutes: 238.9, llmCost: "$2.76", credits: "213,757" },
@@ -54,46 +42,149 @@ const languageData = [
   { language: "Spanish", percentage: 11.8 },
 ];
 
+const rangeOptions: { label: string; value: MetricRange }[] = [
+  { label: "Last 7 Days", value: "LAST_7_DAYS" },
+  { label: "Last 30 Days", value: "LAST_30_DAYS" },
+  { label: "All Time", value: "ALL_TIME" },
+];
+
 const Index = () => {
+  const [selectedRange, setSelectedRange] = useState<MetricRange>("LAST_30_DAYS");
+  const [selectedAgentId, setSelectedAgentId] = useState<string>("all");
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+
+    if (hour < 12) {
+      return "Good morning";
+    }
+
+    if (hour < 18) {
+      return "Good afternoon";
+    }
+
+    return "Good night";
+  };
+
+  const greeting = getGreeting();
+  
+  const {
+    data: metrics,
+    isLoading: isMetricsLoading,
+    isError: isMetricsError,
+    error: metricsError,
+  } = useElevenLabsMetrics(selectedRange, selectedAgentId);
+
+  const { data: agents, isLoading: isAgentsLoading } = useElevenLabsAgents();
+
+  const totalCallsDisplay = metrics
+    ? metrics.totalCalls.toLocaleString()
+    : isMetricsLoading
+      ? "..."
+      : "0";
+
+  const averageDurationDisplay = metrics
+    ? formatDuration(metrics.averageDurationSeconds)
+    : isMetricsLoading
+      ? "..."
+      : "0:00";
+
+  const successRateDisplay = metrics
+    ? formatPercentage(metrics.successRate)
+    : isMetricsLoading
+      ? "..."
+      : "0%";
+
+  const callsChartData = metrics?.callsByDay ?? [];
+  const successChartData = metrics?.successTimeline ?? [];
+
+  const metricsErrorMessage =
+    metricsError instanceof Error
+      ? metricsError.message
+      : "Unable to load ElevenLabs metrics.";
+
+  const renderLoadingState = () => (
+    <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+      Loading data...
+    </div>
+  );
+
+  const renderNoDataState = (message: string) => (
+    <div className="flex h-[300px] items-center justify-center text-sm text-muted-foreground">
+      {message}
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-6 space-y-6 max-w-[1600px]">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+        {/* Header and Filters */}
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">My Workspace</p>
-            <h1 className="text-3xl font-bold text-foreground">Good afternoon, Adrian reynoso</h1>
+            <h1 className="text-3xl font-bold text-foreground">{greeting}</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <Select defaultValue="all">
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
+          
+          <div className="flex gap-3">
+            {/* Agent Filter */}
+            <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Select Agent" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All agents</SelectItem>
-                <SelectItem value="active">Active only</SelectItem>
+                <SelectItem value="all">All Agents</SelectItem>
+                {isAgentsLoading ? (
+                  <SelectItem value="loading" disabled>
+                    Loading Agents...
+                  </SelectItem>
+                ) : (
+                  agents?.map((agent) => (
+                    <SelectItem key={agent.agent_id} value={agent.agent_id}>
+                      {agent.name}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
-            <Select defaultValue="month">
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
+
+            {/* Time Range Filter */}
+            <Select value={selectedRange} onValueChange={(value) => setSelectedRange(value as MetricRange)}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Select Range" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="week">Last week</SelectItem>
-                <SelectItem value="month">Last month</SelectItem>
-                <SelectItem value="year">Last year</SelectItem>
+                {rangeOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
         </div>
 
+        {/* Metrics Error Alert */}
+        {isMetricsError && (
+          <Alert variant="destructive">
+            <Terminal className="h-4 w-4" />
+            <AlertTitle>ElevenLabs API Error</AlertTitle>
+            <AlertDescription>
+              {metricsErrorMessage}
+              <p className="mt-2">
+                Por favor, asegúrate de que tu <code>VITE_ELEVENLABS_API_KEY</code> esté configurada correctamente y que tu cuenta tenga acceso a la API de Conversational AI. Si estás utilizando un endpoint personalizado, verifica la variable <code>VITE_ELEVENLABS_DASHBOARD_ENDPOINT</code>.
+              </p>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {/* Metrics Cards */}
-        <div className="grid grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <Card className="border-border bg-card">
             <CardContent className="p-6">
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Number of calls</p>
-                <p className="text-3xl font-bold text-foreground">1,397</p>
+                <p className="text-3xl font-bold text-foreground">{totalCallsDisplay}</p>
               </div>
             </CardContent>
           </Card>
@@ -102,7 +193,7 @@ const Index = () => {
             <CardContent className="p-6">
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Average duration</p>
-                <p className="text-3xl font-bold text-foreground">0:47</p>
+                <p className="text-3xl font-bold text-foreground">{averageDurationDisplay}</p>
               </div>
             </CardContent>
           </Card>
@@ -110,26 +201,8 @@ const Index = () => {
           <Card className="border-border bg-card">
             <CardContent className="p-6">
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Total cost</p>
-                <p className="text-3xl font-bold text-foreground">702,341<span className="text-sm font-normal text-muted-foreground ml-1">credits</span></p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card">
-            <CardContent className="p-6">
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Average cost</p>
-                <p className="text-3xl font-bold text-foreground">503<span className="text-sm font-normal text-muted-foreground ml-1">credits/call</span></p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border bg-card">
-            <CardContent className="p-6">
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Total LLM cost</p>
-                <p className="text-3xl font-bold text-foreground">$6.7</p>
+                <p className="text-sm text-muted-foreground">Overall success rate</p>
+                <p className="text-3xl font-bold text-foreground">{successRateDisplay}</p>
               </div>
             </CardContent>
           </Card>
@@ -137,68 +210,80 @@ const Index = () => {
 
         {/* Calls Chart */}
         <Card className="border-border bg-card p-6">
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={callsData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis 
-                dataKey="date" 
-                stroke="hsl(var(--muted-foreground))" 
-                fontSize={12}
-              />
-              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: "hsl(var(--card))", 
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "6px"
-                }}
-              />
-              <Line 
-                type="monotone" 
-                dataKey="calls" 
-                stroke="hsl(var(--primary))" 
-                strokeWidth={2}
-                dot={{ fill: "hsl(var(--primary))", r: 4 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          {isMetricsLoading ? (
+            renderLoadingState()
+          ) : callsChartData.length === 0 ? (
+            renderNoDataState("No call activity recorded for this period.")
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={callsChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis
+                  dataKey="date"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={12}
+                />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "6px",
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="calls"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={2}
+                  dot={{ fill: "hsl(var(--primary))", r: 4 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
         </Card>
 
         {/* Success Rate Chart */}
         <Card className="border-border bg-card p-6">
           <h3 className="text-lg font-semibold text-foreground mb-4">Overall success rate</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={successData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis 
-                dataKey="date" 
-                stroke="hsl(var(--muted-foreground))" 
-                fontSize={12}
-              />
-              <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: "hsl(var(--card))", 
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "6px"
-                }}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="success" 
-                stackId="1"
-                stroke="#4ade80" 
-                fill="#4ade80" 
-              />
-              <Area 
-                type="monotone" 
-                dataKey="fail" 
-                stackId="1"
-                stroke="#ef4444" 
-                fill="#ef4444" 
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          {isMetricsLoading ? (
+            renderLoadingState()
+          ) : successChartData.length === 0 ? (
+            renderNoDataState("No success data available for this period.")
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={successChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis
+                  dataKey="date"
+                  stroke="hsl(var(--muted-foreground))"
+                  fontSize={12}
+                />
+                <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "6px",
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="success"
+                  stackId="1"
+                  stroke="#4ade80"
+                  fill="#4ade80"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="fail"
+                  stackId="1"
+                  stroke="#ef4444"
+                  fill="#ef4444"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          )}
         </Card>
 
         {/* Bottom Section */}

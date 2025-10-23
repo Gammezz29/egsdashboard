@@ -1,4 +1,4 @@
-import { Home, Mic2, History, Settings, Sparkles, Users } from "lucide-react";
+import { Home, History, Settings, Users } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import {
@@ -16,7 +16,6 @@ import {
 const items = [
   { title: "Home", url: "/", icon: Home },
   { title: "Agents", url: "/agents", icon: Users },
-  { title: "Voice Lab", url: "/voice-lab", icon: Mic2 },
   { title: "History", url: "/history", icon: History },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
@@ -32,13 +31,15 @@ export function AppSidebar() {
       <SidebarContent>
         <div className="p-6 border-b border-sidebar-border">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-white" />
-            </div>
+            <img
+              src="/egs-logo.jpg"
+              alt="EGS logo"
+              className="w-8 h-8 rounded-lg object-cover"
+            />
             {open && (
               <div>
-                <h2 className="text-sm font-semibold text-sidebar-foreground">VoiceAI</h2>
-                <p className="text-xs text-muted-foreground">Studio</p>
+                <h2 className="text-sm font-semibold text-sidebar-foreground">EGS</h2>
+                <p className="text-xs text-muted-foreground">Dashboard</p>
               </div>
             )}
           </div>

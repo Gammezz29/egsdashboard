@@ -8,7 +8,6 @@ import { AppSidebar } from "@/components/AppSidebar";
 import Index from "./pages/Index";
 import Agents from "./pages/Agents";
 import AgentDetail from "./pages/AgentDetail";
-import VoiceLab from "./pages/VoiceLab";
 import History from "./pages/History";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
@@ -34,7 +33,6 @@ const App = () => (
                 <Route path="/" element={<Index />} />
                 <Route path="/agents" element={<Agents />} />
                 <Route path="/agents/:id" element={<AgentDetail />} />
-                <Route path="/voice-lab" element={<VoiceLab />} />
                 <Route path="/history" element={<History />} />
                 <Route path="/settings" element={<Settings />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

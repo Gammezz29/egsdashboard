@@ -1,8 +1,6 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Search, Plus, MoreHorizontal, ChevronDown } from "lucide-react";
+import { Plus, MoreHorizontal, ChevronDown } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -34,8 +32,6 @@ const mockAgents = [
 
 export default function Agents() {
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState("");
-
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-6 py-8">
@@ -52,23 +48,6 @@ export default function Agents() {
               New agent
             </Button>
           </div>
-        </div>
-
-        {/* Search and Filters */}
-        <div className="mb-6 flex items-center gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Search agents..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <Button variant="outline" size="sm">
-            <Plus className="w-4 h-4 mr-2" />
-            Creator
-          </Button>
         </div>
 
         {/* Table */}
@@ -88,53 +67,49 @@ export default function Agents() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {mockAgents
-                .filter((agent) =>
-                  agent.name.toLowerCase().includes(searchQuery.toLowerCase())
-                )
-                .map((agent, index) => (
-                  <TableRow 
-                    key={index} 
-                    className="cursor-pointer"
-                    onClick={() => navigate(`/agents/${index + 1}`)}
-                  >
-                    <TableCell className="font-medium">{agent.name}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {agent.createdBy}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {agent.createdAt}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="h-8 w-8 p-0"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
-                            Duplicate
-                          </DropdownMenuItem>
-                          <DropdownMenuItem 
-                            className="text-destructive"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
+              {mockAgents.map((agent, index) => (
+                <TableRow
+                  key={index}
+                  className="cursor-pointer"
+                  onClick={() => navigate(`/agents/${index + 1}`)}
+                >
+                  <TableCell className="font-medium">{agent.name}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {agent.createdBy}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {agent.createdAt}
+                  </TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
+                          Duplicate
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </div>
