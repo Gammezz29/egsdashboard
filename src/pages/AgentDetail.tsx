@@ -53,7 +53,6 @@ import {
   RefreshCw,
   Clock,
   Upload,
-  FileSpreadsheet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -230,7 +229,6 @@ export default function AgentDetail() {
   const supabaseReady = isSupabaseConfigured();
   const isMarysNoShow =
     (agent?.name ?? "").trim().toLowerCase() === "marys no show";
-  const isExcelToolEnabled = id === "agent_3601k6kbs6n1fadbtnqx89eyrdwc";
 
   const marysTableQuery = useSupabaseTable(
     MARYS_NO_SHOW_TABLE,
@@ -277,11 +275,6 @@ export default function AgentDetail() {
   const [batchMode, setBatchMode] = useState(false);
   const [encounterId, setEncounterId] = useState("");
   const [isSubmittingManualCall, setIsSubmittingManualCall] = useState(false);
-  const [selectedExcelFile, setSelectedExcelFile] = useState<File | null>(null);
-  const [isExcelConverting, setIsExcelConverting] = useState(false);
-  const excelFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [isExcelOpen, setIsExcelOpen] = useState(false);
-
   const [callsPerBatchInput, setCallsPerBatchInput] = useState("10");
   const [minutesBetweenBatchesInput, setMinutesBetweenBatchesInput] = useState("15");
   const [schedulerStatus, setSchedulerStatus] = useState<"idle" | "running" | "paused">("idle");
@@ -326,29 +319,58 @@ export default function AgentDetail() {
 
   const buildCallPayload = useCallback(
     (row: SupabaseRow, overridePhone?: string): ElevenLabsCallRequest | null => {
-      const rawPhone = overridePhone?.trim() || getRowValue(row, "primary_phone");
+      const storedPrimaryPhone = getRowValue(row, "primary_phone");
+      const overrideTrimmed = overridePhone?.trim() ?? "";
+      const rawPhone = overrideTrimmed || storedPrimaryPhone;
       const normalisedPhone = normalisePhoneForPayload(rawPhone);
       if (!normalisedPhone) {
         return null;
       }
 
+      const vars: Record<string, string> = {};
+
+      Object.keys(row).forEach((key) => {
+        vars[key] = getRowValue(row, key);
+      });
+
+      const requiredColumns = [
+        "account_number",
+        "encounter_id",
+        "first_name",
+        "last_name",
+        "encounter_date",
+        "check_in",
+        "visit_type",
+        "dob",
+        "marys_center_sites",
+        "provider_name",
+        "reason",
+        "preferred_language",
+        "primary_phone",
+        "mobile_phone",
+        "status",
+      ];
+
+      requiredColumns.forEach((column) => {
+        if (!(column in vars)) {
+          vars[column] = getRowValue(row, column);
+        }
+      });
+
+      if (overrideTrimmed) {
+        vars.primary_phone = overrideTrimmed;
+      } else if (!vars.primary_phone && storedPrimaryPhone) {
+        vars.primary_phone = storedPrimaryPhone;
+      } else if (!vars.primary_phone) {
+        vars.primary_phone = normalisedPhone;
+      }
+
+      if (!vars.mobile_phone && overrideTrimmed) {
+        vars.mobile_phone = overrideTrimmed;
+      }
+
       const preferredLanguage = getRowValue(row, "preferred_language");
       const lang = determineLanguageCode(preferredLanguage);
-
-      const vars: Record<string, string> = {
-        encounter_id: getRowValue(row, "encounter_id"),
-        preferred_language:
-          preferredLanguage ||
-          (lang === "en" ? "English" : lang === "es" ? "Spanish" : lang),
-        primary_phone: getRowValue(row, "primary_phone") || normalisedPhone,
-        first_name: getRowValue(row, "first_name"),
-        last_name: getRowValue(row, "last_name"),
-        check_in: getRowValue(row, "check_in"),
-        dob: getRowValue(row, "dob"),
-        provider_name: getRowValue(row, "provider_name"),
-        insurance_name: getRowValue(row, "insurance_name"),
-        account_number: getRowValue(row, "account_number"),
-      };
 
       return {
         to: normalisedPhone,
@@ -580,103 +602,6 @@ export default function AgentDetail() {
     }
   };
 
-  const resetExcelFile = useCallback(() => {
-    setSelectedExcelFile(null);
-    if (excelFileInputRef.current) {
-      excelFileInputRef.current.value = "";
-    }
-  }, []);
-
-  const handleExcelFileChange = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (!file) {
-        resetExcelFile();
-        return;
-      }
-
-      if (!file.name.toLowerCase().endsWith(".xlsx")) {
-        toast({
-          title: "Invalid file",
-          description: "Please select a valid .xlsx file.",
-          variant: "destructive",
-        });
-        resetExcelFile();
-        return;
-      }
-
-      setSelectedExcelFile(file);
-      setIsExcelOpen(true);
-    },
-    [resetExcelFile, toast],
-  );
-
-  const handleExcelConvert = useCallback(async () => {
-    if (!selectedExcelFile) {
-      toast({
-        title: "No file selected",
-        description: "Choose an Excel file before converting.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const loadingToast = toast({
-      title: "Converting file...",
-      description: selectedExcelFile.name,
-      duration: 60000,
-    });
-
-    setIsExcelConverting(true);
-    const formData = new FormData();
-    formData.append("file", selectedExcelFile);
-
-    try {
-      const response = await fetch("https://api.egsai.dev/excel-normalizer/convert", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        let message = "An unknown error occurred during conversion.";
-        try {
-          const errorPayload = await response.json();
-          if (errorPayload && typeof errorPayload.error === "string" && errorPayload.error.trim()) {
-            message = errorPayload.error;
-          }
-        } catch {
-          // Ignore JSON parsing errors and keep default message
-        }
-        throw new Error(message);
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = selectedExcelFile.name.replace(/\.xlsx$/i, ".csv") || "converted.csv";
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.URL.revokeObjectURL(url);
-
-      toast({
-        title: "Conversion complete",
-        description: "The CSV file has been downloaded.",
-      });
-      resetExcelFile();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "An unknown error occurred during conversion.";
-      toast({
-        title: "Conversion failed",
-        description: message,
-        variant: "destructive",
-      });
-    } finally {
-      loadingToast.dismiss();
-      setIsExcelConverting(false);
-    }
-  }, [resetExcelFile, selectedExcelFile, toast]);
 
   const handleStartSchedule = () => {
     const callsPerBatchValue = Number(callsPerBatchInput);
@@ -1081,8 +1006,8 @@ export default function AgentDetail() {
                 </div>
               ) : (
                 <div className="flex h-full flex-col">
-                  <div className="flex-1 overflow-hidden rounded-md border border-border/60">
-                    <div className="h-full w-full overflow-auto">
+                  <ScrollArea className="flex-1 rounded-md border border-border/60">
+                    <div className="min-w-[960px]">
                       <Table className="min-w-[960px]">
                         <TableHeader>
                           <TableRow>
@@ -1106,114 +1031,13 @@ export default function AgentDetail() {
                         </TableBody>
                       </Table>
                     </div>
-                  </div>
+                  </ScrollArea>
                 </div>
               )}
             </CardContent>
           </Card>
 
           <div className="lg:col-span-4 flex h-full flex-col gap-6 overflow-hidden">
-            {isExcelToolEnabled ? (
-              <Card className="shrink-0 border-border/80 bg-card/90 backdrop-blur shadow-sm">
-                <CardHeader className="space-y-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsExcelOpen((prev) => !prev)}
-                    className="flex w-full items-center justify-between gap-3 text-left"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <FileSpreadsheet className="h-4 w-4 text-primary" />
-                        <CardTitle className="text-lg">Excel to CSV normalizer</CardTitle>
-                      </div>
-                      <CardDescription>
-                        Convert Marys templates into campaign-ready CSV files.
-                      </CardDescription>
-                    </div>
-                    <ChevronDown
-                      className={cn(
-                        "h-4 w-4 text-muted-foreground transition-transform",
-                        isExcelOpen ? "rotate-180" : "rotate-0",
-                      )}
-                    />
-                  </button>
-                </CardHeader>
-                {isExcelOpen ? (
-                  <CardContent className="space-y-5 pt-0">
-                    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border/50 bg-muted/15 p-6 text-center">
-                      <FileSpreadsheet className="h-12 w-12 text-muted-foreground" />
-                      <div className="space-y-1">
-                        <p className="text-sm font-semibold text-foreground">
-                          {selectedExcelFile ? "File ready" : "Select an Excel file"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Only .xlsx files are accepted. We will download the converted CSV automatically.
-                        </p>
-                      </div>
-                      <div className="flex flex-col items-center gap-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="gap-2"
-                          onClick={() => excelFileInputRef.current?.click()}
-                        >
-                          <Upload className="h-4 w-4" />
-                          Browse file
-                        </Button>
-                        <p className="max-w-[240px] truncate text-xs text-muted-foreground">
-                          {selectedExcelFile ? selectedExcelFile.name : "No file selected"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <Button
-                        type="button"
-                        onClick={handleExcelConvert}
-                        disabled={!selectedExcelFile || isExcelConverting}
-                        className="w-full gap-2"
-                      >
-                        {isExcelConverting ? (
-                          <>
-                            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                            Converting…
-                          </>
-                        ) : (
-                          <>
-                            <Download className="h-4 w-4" />
-                            Convert and download CSV
-                          </>
-                        )}
-                      </Button>
-                      <div className="flex justify-end">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-xs text-muted-foreground hover:text-foreground"
-                          onClick={resetExcelFile}
-                          disabled={!selectedExcelFile || isExcelConverting}
-                        >
-                          Clear selection
-                        </Button>
-                      </div>
-                    </div>
-                    <input
-                      ref={excelFileInputRef}
-                      type="file"
-                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                      className="hidden"
-                      onChange={handleExcelFileChange}
-                    />
-                  </CardContent>
-                ) : (
-                  <CardContent className="pt-0">
-                    <div className="rounded-lg border border-dashed border-border/40 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
-                      Upload an Excel (.xlsx) file and we will normalize it into the CSV format used by Marys campaigns.
-                    </div>
-                  </CardContent>
-                )}
-              </Card>
-            ) : null}
             <Card className="shrink-0 border-border/80 bg-card/90 backdrop-blur shadow-sm">
               <CardHeader className="space-y-3">
                 <button
