@@ -1,20 +1,14 @@
-import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  ChangeEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -22,375 +16,1444 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { ArrowLeft, Copy, Phone, Plus, Settings, Wand2, Activity, MoreHorizontal } from "lucide-react";
-import { toast } from "sonner";
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { useElevenLabsAgents } from "@/hooks/useElevenLabsMetrics";
+import { useAuth } from "@/hooks/useAuth";
+import { filterAgentsForUser, isAgentAccessRestricted } from "@/lib/accessControl";
+import { useSupabaseTable } from "@/hooks/useSupabaseTable";
+import {
+  exportSupabaseTableCsv,
+  importSupabaseRows,
+  isSupabaseConfigured,
+  parseCsvContent,
+} from "@/lib/supabase";
+import { useToast } from "@/hooks/use-toast";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowLeft,
+  ChevronDown,
+  Database,
+  Download,
+  Loader2,
+  PhoneCall,
+  RefreshCw,
+  Clock,
+  Upload,
+  FileSpreadsheet,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import {
+  startElevenLabsCall,
+  type ElevenLabsCallRequest,
+} from "@/lib/elevenLabs";
+
+type SupabaseRow = Record<string, unknown>;
+
+const MARYS_NO_SHOW_TABLE = "marys_no_show";
+const MARYS_NO_SHOW_DISPLAY_NAME = "Marys No show";
+
+const getRowValue = (row: SupabaseRow, key: string): string => {
+  const value = row?.[key];
+  if (value == null) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  return String(value).trim();
+};
+
+const normalisePhoneForPayload = (value: string): string => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  const digitsOnly = trimmed.replace(/[^\d+]/g, "");
+  if (!digitsOnly) {
+    return "";
+  }
+
+  if (digitsOnly.startsWith("+")) {
+    const cleaned = digitsOnly.slice(1).replace(/\D/g, "");
+    return cleaned ? `+${cleaned}` : "";
+  }
+
+  return digitsOnly.replace(/\D/g, "");
+};
+
+const normalisePhoneForComparison = (value: string): string =>
+  normalisePhoneForPayload(value).replace(/^\+/, "");
+
+const determineLanguageCode = (value: string): string => {
+  const trimmed = value.trim().toLowerCase();
+
+  if (!trimmed) {
+    return "en";
+  }
+
+  if (trimmed.startsWith("es")) {
+    return "es";
+  }
+
+  if (trimmed.startsWith("en")) {
+    return "en";
+  }
+
+  if (trimmed.startsWith("fr")) {
+    return "fr";
+  }
+
+  if (trimmed.startsWith("pt")) {
+    return "pt";
+  }
+
+  if (trimmed.length >= 2) {
+    return trimmed.slice(0, 2);
+  }
+
+  return "en";
+};
+
+const formatContactLabel = (row: SupabaseRow): string => {
+  const first = getRowValue(row, "first_name");
+  const last = getRowValue(row, "last_name");
+  const name = [first, last].filter(Boolean).join(" ").trim();
+
+  if (name) {
+    return name;
+  }
+
+  const encounter = getRowValue(row, "encounter_id");
+  if (encounter) {
+    return `Encounter ${encounter}`;
+  }
+
+  const phone = getRowValue(row, "primary_phone");
+  if (phone) {
+    return phone;
+  }
+
+  return "Contact";
+};
+
+const formatCellValue = (value: unknown): string => {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const SchedulerStatusBadge = ({ status }: { status: "idle" | "running" | "paused" }) => {
+  if (status === "running") {
+    return <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/40">Running</Badge>;
+  }
+
+  if (status === "paused") {
+    return <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/40">Paused</Badge>;
+  }
+
+  return <Badge variant="outline">Idle</Badge>;
+};
 
 export default function AgentDetail() {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [agentLanguage, setAgentLanguage] = useState("English");
-  const [firstMessageLanguage, setFirstMessageLanguage] = useState("English");
-  const [llmModel, setLlmModel] = useState("GPT-OSS-120B");
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const requiresRestriction = isAgentAccessRestricted(user);
 
-  const handleCopyAgentId = () => {
-    navigator.clipboard.writeText("agent_8101k7me0r3ze5taw3w47tcseedd");
-    toast.success("Agent ID copied to clipboard");
+  const {
+    data: agents,
+    isLoading: isAgentsLoading,
+    isError: isAgentsError,
+    refetch,
+  } = useElevenLabsAgents();
+
+  const accessibleAgents = useMemo(
+    () => filterAgentsForUser(agents, user),
+    [agents, user],
+  );
+
+  const agent = useMemo(
+    () => accessibleAgents.find((item) => item.id === id) ?? null,
+    [accessibleAgents, id],
+  );
+
+  useEffect(() => {
+    if (!requiresRestriction) {
+      return;
+    }
+
+    if (isAgentsLoading) {
+      return;
+    }
+
+    if (accessibleAgents.length === 0) {
+      return;
+    }
+
+    if (!agent) {
+      navigate("/agents", { replace: true });
+    }
+  }, [accessibleAgents, agent, isAgentsLoading, navigate, requiresRestriction]);
+
+  const supabaseReady = isSupabaseConfigured();
+  const isMarysNoShow =
+    (agent?.name ?? "").trim().toLowerCase() === "marys no show";
+  const isExcelToolEnabled = id === "agent_3601k6kbs6n1fadbtnqx89eyrdwc";
+
+  const marysTableQuery = useSupabaseTable(
+    MARYS_NO_SHOW_TABLE,
+    Boolean(isMarysNoShow && supabaseReady),
+  );
+
+  const tableColumns = useMemo(() => {
+    if (!marysTableQuery.data || marysTableQuery.data.length === 0) {
+      return [] as string[];
+    }
+
+    const priorityColumns = [
+      "encounter_id",
+      "first_name",
+      "last_name",
+      "primary_phone",
+      "account_number",
+      "call_status",
+    ];
+
+    const columnSet = new Set<string>();
+    marysTableQuery.data.forEach((row) => {
+      Object.keys(row).forEach((key) => columnSet.add(key));
+    });
+
+    const remainingColumns = Array.from(columnSet.values()).filter(
+      (column) => !priorityColumns.includes(column),
+    );
+
+    remainingColumns.sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" }),
+    );
+
+    return [...priorityColumns.filter((column) => columnSet.has(column)), ...remainingColumns];
+  }, [marysTableQuery.data]);
+
+  const marysRecordCount = marysTableQuery.data?.length ?? 0;
+  const hasMarysRows = marysRecordCount > 0;
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+
+  const [batchMode, setBatchMode] = useState(false);
+  const [encounterId, setEncounterId] = useState("");
+  const [isSubmittingManualCall, setIsSubmittingManualCall] = useState(false);
+  const [selectedExcelFile, setSelectedExcelFile] = useState<File | null>(null);
+  const [isExcelConverting, setIsExcelConverting] = useState(false);
+  const excelFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isExcelOpen, setIsExcelOpen] = useState(false);
+
+  const [callsPerBatchInput, setCallsPerBatchInput] = useState("10");
+  const [minutesBetweenBatchesInput, setMinutesBetweenBatchesInput] = useState("15");
+  const [schedulerStatus, setSchedulerStatus] = useState<"idle" | "running" | "paused">("idle");
+  const [pendingContacts, setPendingContacts] = useState(0);
+  const [schedulerLogs, setSchedulerLogs] = useState<string[]>([]);
+  const [isStartingSchedule, setIsStartingSchedule] = useState(false);
+  const [isManualOpen, setIsManualOpen] = useState(false);
+  const [isSchedulerOpen, setIsSchedulerOpen] = useState(true);
+  const schedulerQueueRef = useRef<SupabaseRow[]>([]);
+  const schedulerTimerRef = useRef<number | null>(null);
+  const schedulerStatusRef = useRef<"idle" | "running" | "paused">(schedulerStatus);
+
+  const appendSchedulerLog = useCallback((message: string) => {
+    setSchedulerLogs((prev) => [
+      `${new Date().toLocaleString()} — ${message}`,
+      ...prev,
+    ]);
+  }, []);
+
+  const clearSchedulerTimer = useCallback(() => {
+    if (schedulerTimerRef.current != null) {
+      window.clearTimeout(schedulerTimerRef.current);
+      schedulerTimerRef.current = null;
+    }
+  }, []);
+
+  const updateSchedulerQueue = useCallback((next: SupabaseRow[]) => {
+    schedulerQueueRef.current = next;
+    setPendingContacts(next.length);
+  }, []);
+
+  useEffect(() => {
+    schedulerStatusRef.current = schedulerStatus;
+  }, [schedulerStatus]);
+
+  useEffect(
+    () => () => {
+      clearSchedulerTimer();
+    },
+    [clearSchedulerTimer],
+  );
+
+  const buildCallPayload = useCallback(
+    (row: SupabaseRow, overridePhone?: string): ElevenLabsCallRequest | null => {
+      const rawPhone = overridePhone?.trim() || getRowValue(row, "primary_phone");
+      const normalisedPhone = normalisePhoneForPayload(rawPhone);
+      if (!normalisedPhone) {
+        return null;
+      }
+
+      const preferredLanguage = getRowValue(row, "preferred_language");
+      const lang = determineLanguageCode(preferredLanguage);
+
+      const vars: Record<string, string> = {
+        encounter_id: getRowValue(row, "encounter_id"),
+        preferred_language:
+          preferredLanguage ||
+          (lang === "en" ? "English" : lang === "es" ? "Spanish" : lang),
+        primary_phone: getRowValue(row, "primary_phone") || normalisedPhone,
+        first_name: getRowValue(row, "first_name"),
+        last_name: getRowValue(row, "last_name"),
+        check_in: getRowValue(row, "check_in"),
+        dob: getRowValue(row, "dob"),
+        provider_name: getRowValue(row, "provider_name"),
+        insurance_name: getRowValue(row, "insurance_name"),
+        account_number: getRowValue(row, "account_number"),
+      };
+
+      return {
+        to: normalisedPhone,
+        lang,
+        vars,
+      };
+    },
+    [],
+  );
+
+  const sendCallForRow = useCallback(
+    async (row: SupabaseRow, overridePhone?: string) => {
+      const payload = buildCallPayload(row, overridePhone);
+      if (!payload) {
+        throw new Error("Contact is missing a valid phone number.");
+      }
+
+      const response = await startElevenLabsCall(payload);
+      const callId =
+        response && typeof response === "object" && "call_id" in response && response.call_id != null
+          ? String(response.call_id)
+          : undefined;
+
+      return { payload, callId };
+    },
+    [buildCallPayload],
+  );
+
+  const findRowByEncounter = useCallback(
+    (encounter: string): SupabaseRow | null => {
+      const data = marysTableQuery.data ?? [];
+      const trimmedEncounter = encounter.trim();
+      if (!trimmedEncounter) {
+        return null;
+      }
+
+      const normalisedEncounter = trimmedEncounter.toLowerCase();
+      return (
+        data.find((row) => {
+          const rowEncounter = getRowValue(row, "encounter_id");
+          if (
+            rowEncounter &&
+            rowEncounter.trim().toLowerCase() === normalisedEncounter
+          ) {
+            return true;
+          }
+
+          return false;
+        }) ?? null
+      );
+    },
+    [marysTableQuery.data],
+  );
+
+  const processSchedulerBatch = useCallback(
+    async (batchSize: number, intervalMinutes: number) => {
+      if (schedulerStatusRef.current !== "running") {
+        return;
+      }
+
+      const queue = schedulerQueueRef.current;
+      if (queue.length === 0) {
+        appendSchedulerLog("No pending contacts left for the scheduler.");
+        updateSchedulerQueue([]);
+        schedulerStatusRef.current = "idle";
+        setSchedulerStatus("idle");
+        clearSchedulerTimer();
+        return;
+      }
+
+      const effectiveBatchSize = Math.max(1, Math.round(batchSize));
+      const batch = queue.slice(0, effectiveBatchSize);
+      const remaining = queue.slice(batch.length);
+      updateSchedulerQueue(remaining);
+
+      const results = await Promise.allSettled(
+        batch.map((row) => sendCallForRow(row)),
+      );
+
+      results.forEach((result, index) => {
+        const label = formatContactLabel(batch[index]);
+        if (result.status === "fulfilled") {
+          const callId = result.value.callId;
+          appendSchedulerLog(
+            `Call queued for ${label}${callId ? ` (ID: ${callId})` : ""}.`,
+          );
+        } else {
+          const reason =
+            result.reason instanceof Error ? result.reason.message : String(result.reason);
+          appendSchedulerLog(`Failed to queue call for ${label}: ${reason}`);
+        }
+      });
+
+      if (remaining.length === 0) {
+        appendSchedulerLog("Scheduler completed all pending contacts.");
+        schedulerStatusRef.current = "idle";
+        setSchedulerStatus("idle");
+        clearSchedulerTimer();
+        return;
+      }
+
+      clearSchedulerTimer();
+      const delayMs = Math.max(1, Math.round(intervalMinutes)) * 60 * 1000;
+      schedulerTimerRef.current = window.setTimeout(() => {
+        void processSchedulerBatch(batchSize, intervalMinutes);
+      }, delayMs);
+    },
+    [appendSchedulerLog, clearSchedulerTimer, sendCallForRow, updateSchedulerQueue],
+  );
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
   };
 
-  const getFlagEmoji = (language: string) => {
-    switch (language) {
-      case "English":
-        return "🇺🇸";
-      case "Spanish":
-        return "🇪🇸";
-      case "French":
-        return "🇫🇷";
-      case "German":
-        return "🇩🇪";
-      default:
-        return "";
+  const handleImportCsv = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setIsImporting(true);
+    try {
+      const content = await file.text();
+      const parsed = parseCsvContent(content);
+
+      if (parsed.length === 0) {
+        throw new Error("The provided CSV file does not contain any rows.");
+      }
+
+      await importSupabaseRows(MARYS_NO_SHOW_TABLE, parsed);
+      toast({
+        title: "Import completed",
+        description: `${parsed.length.toLocaleString()} row(s) imported into Marys no show.`,
+      });
+      marysTableQuery.refetch();
+    } catch (error) {
+      toast({
+        title: "Import failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "We could not process the uploaded CSV file.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      const csvContent = await exportSupabaseTableCsv(MARYS_NO_SHOW_TABLE);
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `marys-no-show-${new Date().toISOString().split("T")[0]}.csv`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+
+      toast({
+        title: "Export ready",
+        description: "The CSV file was generated successfully.",
+      });
+    } catch (error) {
+      toast({
+        title: "Export failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "We could not generate the CSV file.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleManualCall = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const trimmedEncounter = encounterId.trim();
+    if (!trimmedEncounter) {
+      toast({
+        title: "Encounter ID required",
+        description: "Provide the encounter ID you want to call.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const matchedRow = findRowByEncounter(trimmedEncounter);
+    if (!matchedRow) {
+      toast({
+        title: "Contact not found",
+        description: "We couldn’t locate a matching contact in Supabase for this encounter ID.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmittingManualCall(true);
+    try {
+      const { callId } = await sendCallForRow(matchedRow);
+      const label = formatContactLabel(matchedRow);
+
+      toast({
+        title: "Manual call queued",
+        description: `Call queued for ${label}${callId ? ` (ID: ${callId})` : ""}.`,
+      });
+
+      appendSchedulerLog(`Manual call queued for ${label}${callId ? ` (ID: ${callId})` : ""}.`);
+      setEncounterId("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      toast({
+        title: "Failed to queue call",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmittingManualCall(false);
+    }
+  };
+
+  const resetExcelFile = useCallback(() => {
+    setSelectedExcelFile(null);
+    if (excelFileInputRef.current) {
+      excelFileInputRef.current.value = "";
+    }
+  }, []);
+
+  const handleExcelFileChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        resetExcelFile();
+        return;
+      }
+
+      if (!file.name.toLowerCase().endsWith(".xlsx")) {
+        toast({
+          title: "Invalid file",
+          description: "Please select a valid .xlsx file.",
+          variant: "destructive",
+        });
+        resetExcelFile();
+        return;
+      }
+
+      setSelectedExcelFile(file);
+      setIsExcelOpen(true);
+    },
+    [resetExcelFile, toast],
+  );
+
+  const handleExcelConvert = useCallback(async () => {
+    if (!selectedExcelFile) {
+      toast({
+        title: "No file selected",
+        description: "Choose an Excel file before converting.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const loadingToast = toast({
+      title: "Converting file...",
+      description: selectedExcelFile.name,
+      duration: 60000,
+    });
+
+    setIsExcelConverting(true);
+    const formData = new FormData();
+    formData.append("file", selectedExcelFile);
+
+    try {
+      const response = await fetch("https://api.egsai.dev/excel-normalizer/convert", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        let message = "An unknown error occurred during conversion.";
+        try {
+          const errorPayload = await response.json();
+          if (errorPayload && typeof errorPayload.error === "string" && errorPayload.error.trim()) {
+            message = errorPayload.error;
+          }
+        } catch {
+          // Ignore JSON parsing errors and keep default message
+        }
+        throw new Error(message);
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = selectedExcelFile.name.replace(/\.xlsx$/i, ".csv") || "converted.csv";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast({
+        title: "Conversion complete",
+        description: "The CSV file has been downloaded.",
+      });
+      resetExcelFile();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "An unknown error occurred during conversion.";
+      toast({
+        title: "Conversion failed",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
+      loadingToast.dismiss();
+      setIsExcelConverting(false);
+    }
+  }, [resetExcelFile, selectedExcelFile, toast]);
+
+  const handleStartSchedule = () => {
+    const callsPerBatchValue = Number(callsPerBatchInput);
+    const minutesBetweenValue = Number(minutesBetweenBatchesInput);
+
+    if (
+      !Number.isFinite(callsPerBatchValue) ||
+      !Number.isFinite(minutesBetweenValue) ||
+      callsPerBatchValue <= 0 ||
+      minutesBetweenValue <= 0
+    ) {
+      toast({
+        title: "Invalid configuration",
+        description: "Calls per batch and minutes between batches must be greater than zero.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    let skippedMissingPhone = 0;
+    let skippedWithStatus = 0;
+
+    const dataset =
+      (marysTableQuery.data ?? []).filter((row) => {
+        const hasPhone = Boolean(
+          normalisePhoneForPayload(getRowValue(row, "primary_phone")),
+        );
+        if (!hasPhone) {
+          skippedMissingPhone += 1;
+          return false;
+        }
+
+        const callStatus = getRowValue(row, "call_status");
+        if (callStatus) {
+          skippedWithStatus += 1;
+          return false;
+        }
+
+        return true;
+      });
+
+    if (dataset.length === 0) {
+      const reasons: string[] = [];
+
+      if (skippedWithStatus > 0) {
+        reasons.push(
+          `${skippedWithStatus.toLocaleString()} contact${skippedWithStatus === 1 ? "" : "s"} already have a call status.`,
+        );
+      }
+
+      if (skippedMissingPhone > 0) {
+        reasons.push(
+          `${skippedMissingPhone.toLocaleString()} contact${skippedMissingPhone === 1 ? "" : "s"} are missing a valid phone number.`,
+        );
+      }
+
+      toast({
+        title: "No contacts available",
+        duration: 2000,
+      });
+
+      if (reasons.length > 0) {
+        reasons.forEach((reason) => {
+          appendSchedulerLog(`Scheduler skipped queue creation: ${reason}`);
+        });
+      }
+
+      return;
+    }
+
+    if (skippedWithStatus > 0) {
+      appendSchedulerLog(
+        `${skippedWithStatus.toLocaleString()} contact${skippedWithStatus === 1 ? "" : "s"} skipped because they already have a call status.`,
+      );
+    }
+
+    if (skippedMissingPhone > 0) {
+      appendSchedulerLog(
+        `${skippedMissingPhone.toLocaleString()} contact${skippedMissingPhone === 1 ? "" : "s"} skipped due to missing phone numbers.`,
+      );
+    }
+
+    clearSchedulerTimer();
+    setIsStartingSchedule(true);
+
+    updateSchedulerQueue(dataset);
+    schedulerStatusRef.current = "running";
+    setSchedulerStatus("running");
+    appendSchedulerLog(
+      `Scheduler started with ${dataset.length} contact(s). Batch size: ${Math.round(callsPerBatchValue)}, interval: ${Math.round(minutesBetweenValue)} minute(s).`,
+    );
+
+    toast({
+      title: "Schedule activated",
+      description: "Automated batches will now run in the background.",
+    });
+
+    setIsStartingSchedule(false);
+    void processSchedulerBatch(callsPerBatchValue, minutesBetweenValue);
+  };
+
+  const handlePauseSchedule = () => {
+    if (schedulerStatusRef.current !== "running") {
+      return;
+    }
+
+    schedulerStatusRef.current = "paused";
+    setSchedulerStatus("paused");
+    clearSchedulerTimer();
+    appendSchedulerLog("Schedule paused by the operator.");
+  };
+
+  const handleResumeSchedule = () => {
+    if (schedulerStatusRef.current === "running") {
+      return;
+    }
+
+    const callsPerBatchValue = Number(callsPerBatchInput);
+    const minutesBetweenValue = Number(minutesBetweenBatchesInput);
+
+    if (
+      !Number.isFinite(callsPerBatchValue) ||
+      !Number.isFinite(minutesBetweenValue) ||
+      callsPerBatchValue <= 0 ||
+      minutesBetweenValue <= 0
+    ) {
+      toast({
+        title: "Invalid configuration",
+        description: "Calls per batch and minutes between batches must be greater than zero.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (schedulerQueueRef.current.length === 0) {
+      appendSchedulerLog("No pending contacts remain to resume.");
+      schedulerStatusRef.current = "idle";
+      setSchedulerStatus("idle");
+      return;
+    }
+
+    schedulerStatusRef.current = "running";
+    setSchedulerStatus("running");
+    appendSchedulerLog("Schedule resumed.");
+    clearSchedulerTimer();
+    schedulerTimerRef.current = window.setTimeout(() => {
+      void processSchedulerBatch(callsPerBatchValue, minutesBetweenValue);
+    }, 0);
+  };
+
+  const handleClearLogs = () => {
+    setSchedulerLogs([]);
+  };
+
+  const renderLoadingState = (label: string) => (
+    <div className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border/60 p-12 text-center text-muted-foreground">
+      <Loader2 className="h-6 w-6 animate-spin" />
+      <p className="text-sm">{label}</p>
+    </div>
+  );
+
+  const renderErrorState = (errorMessage: string) => (
+    <Alert variant="destructive" className="max-w-2xl">
+      <AlertTitle>We couldn&apos;t load this agent</AlertTitle>
+      <AlertDescription>
+        {errorMessage}
+        {" "}
+        <Button
+          variant="link"
+          size="sm"
+          className="px-1"
+          onClick={() => refetch({ meta: { force: true } })}
+        >
+          Try again
+        </Button>
+        .
+      </AlertDescription>
+    </Alert>
+  );
+
+  if (isAgentsLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container mx-auto px-6 py-10 space-y-8">
+          <Button
+            variant="ghost"
+            className="w-fit gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => navigate("/agents")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Agents
+          </Button>
+          {renderLoadingState("Loading agent information…")}
+        </div>
+      </div>
+    );
+  }
+
+  if (isAgentsError) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container mx-auto px-6 py-10 space-y-8">
+          <Button
+            variant="ghost"
+            className="w-fit gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => navigate("/agents")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Agents
+          </Button>
+          {renderErrorState("Please check your connection and try again.")}
+        </div>
+      </div>
+    );
+  }
+
+  if (!agent) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container mx-auto px-6 py-10 space-y-10">
+          <Button
+            variant="ghost"
+            className="w-fit gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => navigate("/agents")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Agents
+          </Button>
+          <Card className="border-dashed border-border/60 bg-card/50">
+            <CardContent className="py-16 text-center">
+              <h2 className="text-xl font-semibold text-foreground">Agent not found</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                We couldn&apos;t locate the requested agent. Return to the list to browse available agents.
+              </p>
+              <Button className="mt-6" onClick={() => navigate("/agents")}>
+                Back to list
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isMarysNoShow) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="container mx-auto px-6 py-10 space-y-10">
+          <Button
+            variant="ghost"
+            className="w-fit gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => navigate("/agents")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Agents
+          </Button>
+          <Card className="border-border bg-card/95 backdrop-blur-sm shadow-sm">
+            <CardContent className="flex flex-col items-center gap-6 py-16 text-center">
+              <AlertTriangle className="h-12 w-12 text-muted-foreground" />
+              <div>
+                <h1 className="text-3xl font-semibold text-foreground">{agent.name}</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  This workspace is under construction. Soon you&apos;ll be able to edit and monitor this agent from here.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-background">
-      <Tabs defaultValue="agent" className="w-full">
-        {/* Header (Sticky) */}
-        <div className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-10">
-          <div className="container mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Button
-                  variant="link"
-                  size="sm"
-                  onClick={() => navigate("/agents")}
-                  className="p-0 h-auto text-muted-foreground hover:text-foreground"
-                >
-                  Agents
-                </Button>
-                <span>/</span>
-                <h1 className="text-sm font-medium text-foreground">Howard University</h1>
-              </div>
-              <div className="flex items-center gap-3">
-                <Button variant="outline" className="gap-2">
-                  <Activity className="w-4 h-4" />
-                  Test AI agent
-                </Button>
-                <Button variant="outline">Copy link</Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-8 w-8">
-                      <MoreHorizontal className="w-4 h-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem>Edit</DropdownMenuItem>
-                    <DropdownMenuItem>Duplicate</DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive">Delete</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-            
-            {/* Agent Details Block (Centered) */}
-            <div className="mt-2 flex flex-col items-center">
-              <div className="flex items-center gap-3">
-                <h2 className="text-2xl font-bold">Howard University</h2>
-                <Badge variant="outline">Public</Badge>
-                <Badge variant="secondary" className="text-sm font-normal flex items-center gap-1 px-2 py-1">
-                  <Phone className="w-3 h-3" />
-                  +1 202 858 1199
-                </Badge>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
-                <code className="text-xs">agent_8101k7me0r3ze5taw3w47tcseedd</code>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
-                  onClick={handleCopyAgentId}
-                >
-                  <Copy className="w-3 h-3" />
-                </Button>
-              </div>
-            </div>
-          </div>
-          
-          {/* Tabs List (Centered) */}
-          <div className="container mx-auto px-6 flex justify-center">
-            <TabsList className="mb-0">
-              <TabsTrigger value="agent">Agent</TabsTrigger>
-              <TabsTrigger value="workflow">
-                Agent Workflow
-                <Badge variant="secondary" className="ml-2 text-xs">
-                  New
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="voice">Voice</TabsTrigger>
-              <TabsTrigger value="analysis">Analysis</TabsTrigger>
-              <TabsTrigger value="tests">
-                Tests
-                <Badge variant="secondary" className="ml-2 text-xs">
-                  New
-                </Badge>
-              </TabsTrigger>
-              <TabsTrigger value="security">Security</TabsTrigger>
-              <TabsTrigger value="advanced">Advanced</TabsTrigger>
-              <TabsTrigger value="widget">Widget</TabsTrigger>
-            </TabsList>
+    <div className="h-screen bg-background">
+      <div className="mx-auto flex h-full w-full max-w-7xl flex-col gap-6 px-6 py-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <Button
+            variant="ghost"
+            className="w-fit gap-2 text-muted-foreground hover:text-foreground"
+            onClick={() => navigate("/agents")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back to Agents
+          </Button>
+          <div className="space-y-1 text-right">
+            <h1 className="text-3xl font-semibold text-foreground">Marys No show</h1>
+            <p className="text-sm text-muted-foreground">
+              Specialized tools for Marys No show operations.
+            </p>
           </div>
         </div>
 
-        {/* Content (TabsContent) */}
-        <div className="container mx-auto px-6 py-6 max-w-4xl">
-          <TabsContent value="agent" className="space-y-8 mt-0">
-            {/* Agent Language */}
-            <Card className="border-border bg-card">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  Agent Language <Settings className="w-4 h-4 text-muted-foreground" />
+        <div className="grid flex-1 gap-6 overflow-hidden lg:grid-cols-12">
+          <Card className="lg:col-span-8 flex h-full flex-col border-border/80 bg-card/90 backdrop-blur shadow-sm">
+            <CardHeader className="flex flex-col gap-2 border-b border-border/60 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Database className="h-4 w-4 text-primary" />
+                  Database
                 </CardTitle>
                 <CardDescription>
-                  Choose the default language the agent will communicate in.
+                  Supabase table &ldquo;{MARYS_NO_SHOW_DISPLAY_NAME}&rdquo; with CSV import and export.
                 </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Select value={agentLanguage} onValueChange={setAgentLanguage}>
-                  <SelectTrigger className="w-full max-w-xs">
-                    <SelectValue>
-                      <span className="mr-2">{getFlagEmoji(agentLanguage)}</span>
-                      {agentLanguage}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="English">
-                      <span className="mr-2">🇺🇸</span>English
-                    </SelectItem>
-                    <SelectItem value="Spanish">
-                      <span className="mr-2">🇪🇸</span>Spanish
-                    </SelectItem>
-                    <SelectItem value="French">
-                      <span className="mr-2">🇫🇷</span>French
-                    </SelectItem>
-                    <SelectItem value="German">
-                      <span className="mr-2">🇩🇪</span>German
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </CardContent>
-            </Card>
-
-            {/* Additional Languages */}
-            <Card className="border-border bg-card">
-              <CardHeader>
-                <CardTitle>Additional Languages</CardTitle>
-                <CardDescription>
-                  Specify additional languages which callers can choose from.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex gap-2">
-                  <Badge variant="secondary" className="gap-2">
-                    <span className="mr-1">🇪🇸</span>Spanish
-                    <button className="hover:text-destructive">×</button>
-                  </Badge>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  To support additional languages, language overrides will be enabled. You can view and configure all overrides in the "Security" tab.
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* First Message */}
-            <Card className="border-border bg-card">
-              <CardHeader>
-                <CardTitle>First message</CardTitle>
-                <CardDescription>
-                  The first message the agent will say. If empty, the agent will wait for the user to start the conversation. You can specify different presets for each language.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center justify-between mb-2">
-                  <Select value={firstMessageLanguage} onValueChange={setFirstMessageLanguage}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue>
-                        <span className="mr-2">{getFlagEmoji(firstMessageLanguage)}</span>
-                        Default ({firstMessageLanguage})
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="English">
-                        <span className="mr-2">🇺🇸</span>English
-                      </SelectItem>
-                      <SelectItem value="Spanish">
-                        <span className="mr-2">🇪🇸</span>Spanish
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button variant="link" size="sm" className="h-auto p-0 text-xs gap-1">
-                    <Wand2 className="w-3 h-3" />
-                    Translate to all
-                  </Button>
-                </div>
-                <Textarea
-                  defaultValue="Hello, this is Grace with Howard University. How can I help you?"
-                  className="min-h-[80px]"
-                />
-                <div className="flex items-center gap-2">
-                  <Checkbox id="disable-interruptions" />
-                  <Label htmlFor="disable-interruptions" className="text-sm font-normal">
-                    Disable interruptions during first message
-                  </Label>
-                </div>
-                <Button variant="link" size="sm" className="h-auto p-0 text-xs gap-1">
-                  <Plus className="w-3 h-3" />
-                  Add Variable
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* System Prompt */}
-            <Card className="border-border bg-card">
-              <CardHeader>
-                <CardTitle>System prompt</CardTitle>
-                <CardDescription>
-                  The system prompt is used to determine the persona of the agent and the context of the conversation.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Textarea
-                  placeholder="Describe the desired agent (e.g., a customer support agent for ElevenLabs)"
-                  defaultValue="Role & Personality
-
-You are Grace, a warm, professional phone agent representing Howard University. You are patient, empathetic, efficient, and concise. Every caller should feel valued and supported. Always speak as if smiling, with a natural, approachable, and friendly tone. Mirror the caller's mood: calm if they are stressed, upbeat if they are cheerful.
-
-Environment
-
-You speak with prospect clients by phone to manage appointments: create, confirm, reschedule, or cancel. You receive structured inputs and can call tools to complete actions.
-
-Tone & Speaking Style
-
-- Friendly, calm, professional. ~160 wpm. Short, clear sentences.
-- Speak warmly and naturally, never robotic.
-- Use short fillers every 3–5 turns (e.g., 'Okay,' 'Alright,' 'Thanks')
-- Mirror caller's language using {{lang}} (default English unless the patient clearly speaks Spanish first)."
-                  className="min-h-[300px] font-mono text-xs"
-                />
-                <div className="flex items-center gap-2">
-                  <Checkbox id="ignore-personality" />
-                  <Label htmlFor="ignore-personality" className="text-sm font-normal">
-                    Ignore default personality
-                  </Label>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Dynamic Variables */}
-            <Card className="border-border bg-card">
-              <CardHeader>
-                <CardTitle>Dynamic Variables</CardTitle>
-                <CardDescription>
-                  Variables like {'{'}{'{'} user_name {'}'}{'}'} in your prompts and first message will be replaced with actual values when the conversation starts.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <Button variant="outline" size="sm" className="gap-2">
-                  <Plus className="w-4 h-4" />
-                  Add Variable
-                </Button>
-                <div className="space-y-2 p-4 border border-border rounded-md bg-muted/20">
-                  <Label className="text-sm font-medium">Test Variables</Label>
-                  <p className="text-xs text-muted-foreground">
-                    When testing your agent in development, dynamic variables will be replaced with these placeholder values.
+                {supabaseReady && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Records loaded: <span className="font-medium text-foreground">{marysRecordCount}</span>
                   </p>
-                  <div className="space-y-2">
-                    <Label htmlFor="lang-var" className="text-sm">lang</Label>
-                    <Input id="lang-var" defaultValue="English" className="max-w-xs" />
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => marysTableQuery.refetch()}
+                  disabled={marysTableQuery.isFetching}
+                >
+                  {marysTableQuery.isFetching ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Refreshing
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="h-4 w-4" />
+                      Refresh
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={handleExportCsv}
+                  disabled={isExporting || !supabaseReady}
+                >
+                  {isExporting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Exporting
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4" />
+                      Export CSV
+                    </>
+                  )}
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-2"
+                  onClick={handleImportClick}
+                  disabled={isImporting || !supabaseReady}
+                >
+                  {isImporting ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Importing
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4" />
+                      Import CSV
+                    </>
+                  )}
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  onChange={handleImportCsv}
+                />
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-hidden p-6">
+              {!supabaseReady ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Supabase configuration missing</AlertTitle>
+                  <AlertDescription>
+                    Add <code className="font-mono">VITE_SUPABASE_URL</code> and{" "}
+                    <code className="font-mono">VITE_SUPABASE_ANON_KEY</code> to your environment to enable database tools.
+                  </AlertDescription>
+                </Alert>
+              ) : marysTableQuery.isLoading ? (
+                <div className="flex items-center justify-center py-16 text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span className="ml-2 text-sm">Loading table…</span>
+                </div>
+              ) : marysTableQuery.isError ? (
+                <Alert variant="destructive">
+                  <AlertTitle>Unable to load data</AlertTitle>
+                  <AlertDescription>
+                    {marysTableQuery.error instanceof Error
+                      ? marysTableQuery.error.message
+                      : "We couldn’t retrieve the Supabase data at this time."}
+                  </AlertDescription>
+                </Alert>
+              ) : !hasMarysRows ? (
+                <div className="rounded-lg border border-dashed border-border/60 p-12 text-center text-sm text-muted-foreground">
+                  No rows found in {MARYS_NO_SHOW_DISPLAY_NAME}. Import a CSV file or add entries from Supabase.
+                </div>
+              ) : (
+                <div className="flex h-full flex-col">
+                  <div className="flex-1 overflow-hidden rounded-md border border-border/60">
+                    <div className="h-full w-full overflow-auto">
+                      <Table className="min-w-[960px]">
+                        <TableHeader>
+                          <TableRow>
+                            {tableColumns.map((column) => (
+                              <TableHead key={column} className="whitespace-nowrap text-xs uppercase tracking-wide text-muted-foreground">
+                                {column.replaceAll("_", " ")}
+                              </TableHead>
+                            ))}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {marysTableQuery.data!.map((row, rowIndex) => (
+                            <TableRow key={`marys-row-${rowIndex}`}>
+                              {tableColumns.map((column) => (
+                                <TableCell key={`${rowIndex}-${column}`} className="align-top whitespace-nowrap text-sm">
+                                  {formatCellValue(row[column])}
+                                </TableCell>
+                              ))}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+              )}
+            </CardContent>
+          </Card>
 
-            {/* LLM Configuration */}
-            <Card className="border-border bg-card">
-              <CardHeader>
-                <CardTitle>LLM</CardTitle>
-                <CardDescription>
-                  Select which provider and model to use for the LLM.
-                </CardDescription>
+          <div className="lg:col-span-4 flex h-full flex-col gap-6 overflow-hidden">
+            {isExcelToolEnabled ? (
+              <Card className="shrink-0 border-border/80 bg-card/90 backdrop-blur shadow-sm">
+                <CardHeader className="space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsExcelOpen((prev) => !prev)}
+                    className="flex w-full items-center justify-between gap-3 text-left"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <FileSpreadsheet className="h-4 w-4 text-primary" />
+                        <CardTitle className="text-lg">Excel to CSV normalizer</CardTitle>
+                      </div>
+                      <CardDescription>
+                        Convert Marys templates into campaign-ready CSV files.
+                      </CardDescription>
+                    </div>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 text-muted-foreground transition-transform",
+                        isExcelOpen ? "rotate-180" : "rotate-0",
+                      )}
+                    />
+                  </button>
+                </CardHeader>
+                {isExcelOpen ? (
+                  <CardContent className="space-y-5 pt-0">
+                    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border/50 bg-muted/15 p-6 text-center">
+                      <FileSpreadsheet className="h-12 w-12 text-muted-foreground" />
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-foreground">
+                          {selectedExcelFile ? "File ready" : "Select an Excel file"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Only .xlsx files are accepted. We will download the converted CSV automatically.
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-center gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="gap-2"
+                          onClick={() => excelFileInputRef.current?.click()}
+                        >
+                          <Upload className="h-4 w-4" />
+                          Browse file
+                        </Button>
+                        <p className="max-w-[240px] truncate text-xs text-muted-foreground">
+                          {selectedExcelFile ? selectedExcelFile.name : "No file selected"}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <Button
+                        type="button"
+                        onClick={handleExcelConvert}
+                        disabled={!selectedExcelFile || isExcelConverting}
+                        className="w-full gap-2"
+                      >
+                        {isExcelConverting ? (
+                          <>
+                            <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                            Converting…
+                          </>
+                        ) : (
+                          <>
+                            <Download className="h-4 w-4" />
+                            Convert and download CSV
+                          </>
+                        )}
+                      </Button>
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs text-muted-foreground hover:text-foreground"
+                          onClick={resetExcelFile}
+                          disabled={!selectedExcelFile || isExcelConverting}
+                        >
+                          Clear selection
+                        </Button>
+                      </div>
+                    </div>
+                    <input
+                      ref={excelFileInputRef}
+                      type="file"
+                      accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                      className="hidden"
+                      onChange={handleExcelFileChange}
+                    />
+                  </CardContent>
+                ) : (
+                  <CardContent className="pt-0">
+                    <div className="rounded-lg border border-dashed border-border/40 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+                      Upload an Excel (.xlsx) file and we will normalize it into the CSV format used by Marys campaigns.
+                    </div>
+                  </CardContent>
+                )}
+              </Card>
+            ) : null}
+            <Card className="shrink-0 border-border/80 bg-card/90 backdrop-blur shadow-sm">
+              <CardHeader className="space-y-3">
+                <button
+                  type="button"
+                  onClick={() => setIsManualOpen((prev) => !prev)}
+                  className="flex w-full items-center justify-between gap-3 text-left"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <PhoneCall className="h-4 w-4 text-primary" />
+                      <CardTitle className="text-lg">Manual test call</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Provide an encounter ID; we will dial the associated primary phone stored in Supabase.
+                    </CardDescription>
+                  </div>
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 text-muted-foreground transition-transform",
+                      isManualOpen ? "rotate-180" : "rotate-0",
+                    )}
+                  />
+                </button>
               </CardHeader>
-              <CardContent>
-                <div className="flex items-center gap-2">
-                  <Select value={llmModel} onValueChange={setLlmModel}>
-                    <SelectTrigger className="w-full max-w-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="GPT-OSS-120B">GPT-OSS-120B</SelectItem>
-                      <SelectItem value="GPT-4">GPT-4</SelectItem>
-                      <SelectItem value="Claude">Claude</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Badge variant="outline">Experimental</Badge>
-                </div>
-              </CardContent>
+              {isManualOpen ? (
+                <CardContent>
+                  <form className="space-y-4" onSubmit={handleManualCall}>
+                    <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-foreground">Batch mode</p>
+                        <p className="text-xs text-muted-foreground">
+                          Toggle if you plan to dial multiple contacts sequentially.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={batchMode}
+                        onCheckedChange={setBatchMode}
+                        aria-label="Toggle batch mode"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="manual-encounter">Encounter ID</Label>
+                      <Input
+                        id="manual-encounter"
+                        placeholder="e.g. 10299658"
+                        value={encounterId}
+                        onChange={(event) => setEncounterId(event.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        We will automatically dial the primary phone associated with this encounter.
+                      </p>
+                    </div>
+
+                    <Button type="submit" className="w-full gap-2" disabled={isSubmittingManualCall}>
+                      {isSubmittingManualCall ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Starting
+                        </>
+                      ) : (
+                        <>
+                          <Activity className="h-4 w-4" />
+                          Start manual call
+                        </>
+                      )}
+                    </Button>
+                  </form>
+                </CardContent>
+              ) : (
+                <CardContent className="pt-0">
+                  <div className="rounded-lg border border-dashed border-border/40 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+                    Tap to configure manual calls. Current mode: We use the primary phone stored in Supabase.
+                    {" "}
+                    <span className="font-medium text-foreground">
+                      {batchMode ? "Batch enabled" : "Single call"}
+                    </span>
+                    .
+                  </div>
+                </CardContent>
+              )}
             </Card>
 
-            {/* Save Button */}
-            <div className="flex justify-end pt-4 border-t border-border">
-              <Button size="lg">Save Changes</Button>
-            </div>
-          </TabsContent>
+            <Card
+              className={cn(
+                "flex flex-col border-border/80 bg-card/90 backdrop-blur shadow-sm transition-all",
+                isSchedulerOpen ? "h-full" : "shrink-0",
+              )}
+            >
+              <CardHeader className="border-b border-border/60">
+                <button
+                  type="button"
+                  onClick={() => setIsSchedulerOpen((prev) => !prev)}
+                  className="flex w-full items-center justify-between gap-3 text-left"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Activity className="h-4 w-4 text-primary" />
+                      <CardTitle className="text-lg">Automated scheduler</CardTitle>
+                    </div>
+                    <CardDescription>
+                      Configure recurring outreach batches and monitor live progress.
+                    </CardDescription>
+                  </div>
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 text-muted-foreground transition-transform",
+                      isSchedulerOpen ? "rotate-180" : "rotate-0",
+                    )}
+                  />
+                </button>
+              </CardHeader>
+              {isSchedulerOpen ? (
+                <CardContent className="flex-1 overflow-auto space-y-6 p-6">
+                  <div className="grid gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="calls-per-batch">Calls per batch</Label>
+                      <Input
+                        id="calls-per-batch"
+                        type="number"
+                        min={1}
+                        value={callsPerBatchInput}
+                        onChange={(event) => {
+                          setCallsPerBatchInput(event.target.value);
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="minutes-between">Minutes between batches</Label>
+                      <Input
+                        id="minutes-between"
+                        type="number"
+                        min={1}
+                        value={minutesBetweenBatchesInput}
+                        onChange={(event) => {
+                          setMinutesBetweenBatchesInput(event.target.value);
+                        }}
+                      />
+                    </div>
+                  </div>
 
-          <TabsContent value="workflow">
-            <div className="text-center py-12 text-muted-foreground">
-              Agent Workflow configuration coming soon...
-            </div>
-          </TabsContent>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      className="gap-2"
+                      onClick={handleStartSchedule}
+                      disabled={isStartingSchedule}
+                    >
+                      {isStartingSchedule ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Starting
+                        </>
+                      ) : (
+                        <>
+                          <Activity className="h-4 w-4" />
+                          Start schedule
+                        </>
+                      )}
+                    </Button>
+                    {schedulerStatus === "running" ? (
+                      <Button variant="outline" size="sm" onClick={handlePauseSchedule}>
+                        Pause
+                      </Button>
+                    ) : schedulerStatus === "paused" ? (
+                      <Button variant="outline" size="sm" onClick={handleResumeSchedule}>
+                        Resume
+                      </Button>
+                    ) : null}
+                    <Button variant="ghost" size="sm" onClick={handleClearLogs}>
+                      Clear logs
+                    </Button>
+                  </div>
 
-          <TabsContent value="voice">
-            <div className="text-center py-12 text-muted-foreground">
-              Voice settings coming soon...
-            </div>
-          </TabsContent>
+                  <div className="rounded-lg border border-border/60 bg-muted/10 p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Status</span>
+                      <SchedulerStatusBadge status={schedulerStatus} />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">Pending contacts</span>
+                      <span className="text-lg font-semibold text-foreground">
+                        {pendingContacts.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
 
-          <TabsContent value="analysis">
-            <div className="text-center py-12 text-muted-foreground">
-              Analysis dashboard coming soon...
-            </div>
-          </TabsContent>
-
-          <TabsContent value="tests">
-            <div className="text-center py-12 text-muted-foreground">
-              Test configurations coming soon...
-            </div>
-          </TabsContent>
-
-          <TabsContent value="security">
-            <div className="text-center py-12 text-muted-foreground">
-              Security settings coming soon...
-            </div>
-          </TabsContent>
-
-          <TabsContent value="advanced">
-            <div className="text-center py-12 text-muted-foreground">
-              Advanced settings coming soon...
-            </div>
-          </TabsContent>
-
-          <TabsContent value="widget">
-            <div className="text-center py-12 text-muted-foreground">
-              Widget configuration coming soon...
-            </div>
-          </TabsContent>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium text-foreground">Execution log</span>
+                    </div>
+                    <ScrollArea className="h-48 rounded-md border border-border/60 bg-muted/10 p-3">
+                      {schedulerLogs.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Logs will appear here as the scheduler processes contacts.
+                        </p>
+                      ) : (
+                        <div className="space-y-2 text-xs text-muted-foreground">
+                          {schedulerLogs.map((log, index) => (
+                            <p key={`log-${index}`} className="leading-relaxed">
+                              {log}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </div>
+                </CardContent>
+              ) : (
+                <CardContent className="border-t border-border/60 bg-muted/15 px-6 py-4">
+                  <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <span>Status</span>
+                      <SchedulerStatusBadge status={schedulerStatus} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>Pending contacts</span>
+                      <span className="font-semibold text-foreground">
+                        {pendingContacts.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>Batch size</span>
+                      <span className="font-semibold text-foreground">
+                      {callsPerBatchInput.trim() === "" ? "—" : callsPerBatchInput}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span>Interval</span>
+                      <span className="font-semibold text-foreground">
+                        {minutesBetweenBatchesInput.trim() === "" ? "—" : `${minutesBetweenBatchesInput} min`}
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              )}
+            </Card>
+          </div>
         </div>
-      </Tabs>
+      </div>
     </div>
   );
 }

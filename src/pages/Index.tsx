@@ -1,14 +1,15 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useElevenLabsMetrics } from "@/hooks/useElevenLabsMetrics";
-import { useElevenLabsAgents } from "@/hooks/useElevenLabsAgents";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Terminal, Loader2 } from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MetricRange } from "@/lib/elevenLabs";
+import { useElevenLabsAgents, useElevenLabsMetrics } from "@/hooks/useElevenLabsMetrics";
+import { useAuth } from "@/hooks/useAuth";
+import { ensureAgentIdForUser, filterAgentsForUser, isAgentAccessRestricted } from "@/lib/accessControl";
+import type { MetricsRange } from "@/lib/elevenLabs";
 
 const formatDuration = (seconds: number) => {
   if (!Number.isFinite(seconds) || seconds <= 0) {
@@ -42,15 +43,20 @@ const languageData = [
   { language: "Spanish", percentage: 11.8 },
 ];
 
-const rangeOptions: { label: string; value: MetricRange }[] = [
+const rangeOptions: { label: string; value: MetricsRange }[] = [
   { label: "Last 7 Days", value: "LAST_7_DAYS" },
   { label: "Last 30 Days", value: "LAST_30_DAYS" },
   { label: "All Time", value: "ALL_TIME" },
 ];
 
 const Index = () => {
-  const [selectedRange, setSelectedRange] = useState<MetricRange>("LAST_30_DAYS");
-  const [selectedAgentId, setSelectedAgentId] = useState<string>("all");
+  const { user } = useAuth();
+  const requiresRestriction = isAgentAccessRestricted(user);
+
+  const [selectedRange, setSelectedRange] = useState<MetricsRange>("LAST_7_DAYS");
+  const [selectedAgentId, setSelectedAgentId] = useState<string>(
+    requiresRestriction ? "" : "all",
+  );
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -67,36 +73,124 @@ const Index = () => {
   };
 
   const greeting = getGreeting();
-  
+
+  const {
+    data: agents,
+    isLoading: isAgentsLoading,
+    isError: isAgentsError,
+  } = useElevenLabsAgents();
+
+  const accessibleAgents = useMemo(
+    () => filterAgentsForUser(agents, user),
+    [agents, user],
+  );
+
+  useEffect(() => {
+    if (requiresRestriction) {
+      if (accessibleAgents.length === 0) {
+        setSelectedAgentId("");
+        return;
+      }
+
+      setSelectedAgentId((current) => {
+        if (accessibleAgents.some((agent) => agent.id === current)) {
+          return current;
+        }
+        return accessibleAgents[0].id;
+      });
+      return;
+    }
+
+    if (
+      selectedAgentId !== "all" &&
+      accessibleAgents.length > 0 &&
+      !accessibleAgents.some((agent) => agent.id === selectedAgentId)
+    ) {
+      setSelectedAgentId("all");
+    }
+  }, [accessibleAgents, requiresRestriction, selectedAgentId]);
+
+  const effectiveAgentId = useMemo(
+    () => ensureAgentIdForUser(selectedAgentId, agents, user),
+    [agents, selectedAgentId, user],
+  );
+
+  const metricsFilters = useMemo(
+    () => ({
+      range: selectedRange,
+      agentId: effectiveAgentId,
+    }),
+    [selectedRange, effectiveAgentId],
+  );
+
+  const metricsEnabled = !requiresRestriction || Boolean(effectiveAgentId);
+
   const {
     data: metrics,
     isLoading: isMetricsLoading,
+    isFetching: isMetricsFetching,
     isError: isMetricsError,
     error: metricsError,
-  } = useElevenLabsMetrics(selectedRange, selectedAgentId);
+  } = useElevenLabsMetrics(metricsFilters, { enabled: metricsEnabled });
 
-  const { data: agents, isLoading: isAgentsLoading } = useElevenLabsAgents();
+  const agentOptions = useMemo(
+    () =>
+      accessibleAgents.map((agent) => ({
+        id: agent.id,
+        name: agent.name,
+      })),
+    [accessibleAgents],
+  );
+
+  const noAccessibleAgents =
+    requiresRestriction && !isAgentsLoading && !isAgentsError && accessibleAgents.length === 0;
+
+  const agentSelectValue = requiresRestriction
+    ? accessibleAgents.some((agent) => agent.id === selectedAgentId)
+      ? selectedAgentId
+      : accessibleAgents[0]?.id ?? ""
+    : selectedAgentId;
+
+  const agentSelectPlaceholder = isAgentsLoading
+    ? "Loading agents..."
+    : requiresRestriction
+      ? noAccessibleAgents
+        ? "No agents available"
+        : "Select agent"
+      : "All agents";
+
+  const metricsFallbackDisplay = metricsEnabled
+    ? undefined
+    : noAccessibleAgents
+      ? "N/A"
+      : "...";
+
+  const metricsUnavailableMessage = noAccessibleAgents
+    ? "You do not have access to any agents. Contact an administrator."
+    : "We couldn't determine your agent access. Try refreshing the page.";
+
+  const isMetricsPending = metricsEnabled && (isMetricsLoading || isMetricsFetching);
 
   const totalCallsDisplay = metrics
     ? metrics.totalCalls.toLocaleString()
-    : isMetricsLoading
+    : isMetricsPending
       ? "..."
-      : "0";
+      : metricsFallbackDisplay ?? "0";
 
   const averageDurationDisplay = metrics
     ? formatDuration(metrics.averageDurationSeconds)
-    : isMetricsLoading
+    : isMetricsPending
       ? "..."
-      : "0:00";
+      : metricsFallbackDisplay ?? "0:00";
 
   const successRateDisplay = metrics
     ? formatPercentage(metrics.successRate)
-    : isMetricsLoading
+    : isMetricsPending
       ? "..."
-      : "0%";
+      : metricsFallbackDisplay ?? "0%";
 
-  const callsChartData = metrics?.callsByDay ?? [];
-  const successChartData = metrics?.successTimeline ?? [];
+  const callsChartData = metricsEnabled ? metrics?.callsByDay ?? [] : [];
+  const successChartData = metricsEnabled ? metrics?.successTimeline ?? [] : [];
 
   const metricsErrorMessage =
     metricsError instanceof Error
@@ -126,32 +220,37 @@ const Index = () => {
             <h1 className="text-3xl font-bold text-foreground">{greeting}</h1>
           </div>
           
-          <div className="flex gap-3">
-            {/* Agent Filter */}
-            <Select value={selectedAgentId} onValueChange={setSelectedAgentId}>
+          <div className="flex flex-wrap gap-3 items-center">
+            <Select
+              value={agentSelectValue}
+              onValueChange={setSelectedAgentId}
+              disabled={isAgentsLoading || isAgentsError || noAccessibleAgents}
+            >
               <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Select Agent" />
+                <SelectValue placeholder={agentSelectPlaceholder} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Agents</SelectItem>
-                {isAgentsLoading ? (
-                  <SelectItem value="loading" disabled>
-                    Loading Agents...
+                {!requiresRestriction ? <SelectItem value="all">All agents</SelectItem> : null}
+                {isAgentsError && (
+                  <SelectItem value="__agents_error" disabled>
+                    Unable to load agents
                   </SelectItem>
-                ) : (
-                  agents?.map((agent) => (
-                    <SelectItem key={agent.agent_id} value={agent.agent_id}>
-                      {agent.name}
-                    </SelectItem>
-                  ))
                 )}
+                {agentOptions.map((agent) => (
+                  <SelectItem key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
-            {/* Time Range Filter */}
-            <Select value={selectedRange} onValueChange={(value) => setSelectedRange(value as MetricRange)}>
+            <Select
+              value={selectedRange}
+              onValueChange={(value) => setSelectedRange(value as MetricsRange)}
+              disabled={noAccessibleAgents}
+            >
               <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Select Range" />
+                <SelectValue placeholder="Select range" />
               </SelectTrigger>
               <SelectContent>
                 {rangeOptions.map((option) => (
@@ -161,22 +260,42 @@ const Index = () => {
                 ))}
               </SelectContent>
             </Select>
+
+            {isMetricsFetching && !isMetricsLoading && (
+              <span className="flex items-center text-xs text-muted-foreground">
+                <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                Syncing latest metrics…
+              </span>
+            )}
           </div>
         </div>
 
         {/* Metrics Error Alert */}
-        {isMetricsError && (
-          <Alert variant="destructive">
-            <Terminal className="h-4 w-4" />
-            <AlertTitle>ElevenLabs API Error</AlertTitle>
+          {isMetricsError && (
+            <Alert variant="destructive">
+              <Terminal className="h-4 w-4" />
+              <AlertTitle>ElevenLabs API Error</AlertTitle>
+              <AlertDescription>
+                {metricsErrorMessage}
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Make sure <code>VITE_ELEVENLABS_API_KEY</code> is configured and that your
+                  ElevenLabs workspace has Conversational AI API access. You can tune
+                  <code className="mx-1">VITE_ELEVENLABS_CONVERSATION_PAGES</code> if you need to limit
+                  the number of pages retrieved.
+                </p>
+              </AlertDescription>
+            </Alert>
+          )}
+
+        {noAccessibleAgents ? (
+          <Alert>
+            <AlertTitle>Limited access</AlertTitle>
             <AlertDescription>
-              {metricsErrorMessage}
-              <p className="mt-2">
-                Por favor, asegúrate de que tu <code>VITE_ELEVENLABS_API_KEY</code> esté configurada correctamente y que tu cuenta tenga acceso a la API de Conversational AI. Si estás utilizando un endpoint personalizado, verifica la variable <code>VITE_ELEVENLABS_DASHBOARD_ENDPOINT</code>.
-              </p>
+              You do not have access to any agents. Contact an administrator if you believe this is
+              an error.
             </AlertDescription>
           </Alert>
-        )}
+        ) : null}
 
         {/* Metrics Cards */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -210,7 +329,9 @@ const Index = () => {
 
         {/* Calls Chart */}
         <Card className="border-border bg-card p-6">
-          {isMetricsLoading ? (
+          {!metricsEnabled ? (
+            renderNoDataState(metricsUnavailableMessage)
+          ) : isMetricsPending ? (
             renderLoadingState()
           ) : callsChartData.length === 0 ? (
             renderNoDataState("No call activity recorded for this period.")
@@ -246,10 +367,12 @@ const Index = () => {
         {/* Success Rate Chart */}
         <Card className="border-border bg-card p-6">
           <h3 className="text-lg font-semibold text-foreground mb-4">Overall success rate</h3>
-          {isMetricsLoading ? (
+          {!metricsEnabled ? (
+            renderNoDataState(metricsUnavailableMessage)
+          ) : isMetricsPending ? (
             renderLoadingState()
           ) : successChartData.length === 0 ? (
-            renderNoDataState("No success data available for this period.")
+            renderNoDataState("No call outcomes recorded for this period.")
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <AreaChart data={successChartData}>
@@ -273,6 +396,7 @@ const Index = () => {
                   stackId="1"
                   stroke="#4ade80"
                   fill="#4ade80"
+                  name="Success"
                 />
                 <Area
                   type="monotone"
@@ -280,69 +404,85 @@ const Index = () => {
                   stackId="1"
                   stroke="#ef4444"
                   fill="#ef4444"
+                  name="Fail"
+                />
+                <Area
+                  type="monotone"
+                  dataKey="unknown"
+                  stackId="1"
+                  stroke="#facc15"
+                  fill="#facc15"
+                  name="Unknown"
                 />
               </AreaChart>
             </ResponsiveContainer>
           )}
         </Card>
 
-        {/* Bottom Section */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Most Called Agents Table */}
-          <Card className="border-border bg-card lg:col-span-2">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-foreground">Most called agents</h3>
-                <Button variant="ghost" size="sm">See all 14 agents</Button>
-              </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Agent name</TableHead>
-                    <TableHead className="text-right">Number of calls</TableHead>
-                    <TableHead className="text-right">Call minutes</TableHead>
-                    <TableHead className="text-right">LLM cost</TableHead>
-                    <TableHead className="text-right">Credits spent</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {agentsData.map((agent) => (
-                    <TableRow key={agent.name}>
-                      <TableCell className="font-medium">{agent.name}</TableCell>
-                      <TableCell className="text-right">{agent.calls}</TableCell>
-                      <TableCell className="text-right">{agent.minutes}</TableCell>
-                      <TableCell className="text-right">{agent.llmCost}</TableCell>
-                      <TableCell className="text-right">{agent.credits}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {/* Language Stats */}
-          <Card className="border-border bg-card">
-            <CardContent className="p-6">
-              <h3 className="text-lg font-semibold text-foreground mb-6">Language</h3>
-              <div className="space-y-4">
-                {languageData.map((item) => (
-                  <div key={item.language} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-foreground">{item.language}</span>
-                      <span className="text-sm font-semibold text-foreground">{item.percentage}%</span>
-                    </div>
-                    <div className="h-1 bg-muted rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-primary rounded-full" 
-                        style={{ width: `${item.percentage}%` }}
-                      />
-                    </div>
+        {!requiresRestriction && (
+          <>
+            {/* Bottom Section */}
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+              <Card className="border-border bg-card lg:col-span-2">
+                <CardContent className="p-6">
+                  <div className="mb-4 flex items-center justify-between">
+                    <h3 className="text-lg font-semibold text-foreground">Most called agents</h3>
+                    <Button variant="ghost" size="sm">
+                      See all 14 agents
+                    </Button>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Agent name</TableHead>
+                        <TableHead className="text-right">Number of calls</TableHead>
+                        <TableHead className="text-right">Call minutes</TableHead>
+                        <TableHead className="text-right">LLM cost</TableHead>
+                        <TableHead className="text-right">Credits spent</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {agentsData.map((agent) => (
+                        <TableRow key={agent.name} className="hover:bg-muted/40">
+                          <TableCell className="font-medium text-foreground">{agent.name}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">
+                            {agent.calls.toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">{agent.minutes}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">{agent.llmCost}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">{agent.credits}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+
+              <Card className="border-border bg-card">
+                <CardContent className="p-6">
+                  <h3 className="mb-6 text-lg font-semibold text-foreground">Language</h3>
+                  <div className="space-y-4">
+                    {languageData.map((item) => (
+                      <div key={item.language} className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-foreground">{item.language}</span>
+                          <span className="text-sm font-semibold text-foreground">{item.percentage}%</span>
+                        </div>
+                        <div className="h-1 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className="h-full rounded-full bg-primary"
+                            style={{ width: `${item.percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </>
+        )}
+
       </div>
     </div>
   );

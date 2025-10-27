@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Plus, MoreHorizontal, ChevronDown } from "lucide-react";
+import { Plus, MoreHorizontal } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -15,105 +16,160 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-const mockAgents = [
-  { name: "Howard University", createdBy: "adrian@emerginglobal.com", createdAt: "Oct 15, 2025, 10:17 AM" },
-  { name: "Grace US New", createdBy: "adrian@emerginglobal.com", createdAt: "Oct 9, 2025, 2:57 PM" },
-  { name: "GVHC", createdBy: "adrian@emerginglobal.com", createdAt: "Oct 7, 2025, 3:08 PM" },
-  { name: "Camarena", createdBy: "adrian@emerginglobal.com", createdAt: "Oct 6, 2025, 10:26 PM" },
-  { name: "2nd Nature", createdBy: "adrian@emerginglobal.com", createdAt: "Oct 6, 2025, 9:59 PM" },
-  { name: "Marys Demo n8n SPA", createdBy: "adrian@emerginglobal.com", createdAt: "Oct 6, 2025, 5:02 PM" },
-  { name: "Grace Test 2", createdBy: "adrian@emerginglobal.com", createdAt: "Oct 5, 2025, 12:25 AM" },
-  { name: "Marys Demo n8n", createdBy: "adrian@emerginglobal.com", createdAt: "Oct 2, 2025, 2:03 PM" },
-  { name: "Grace GV", createdBy: "adrian@emerginglobal.com", createdAt: "Sep 29, 2025, 11:50 PM" },
-  { name: "GraceMarys", createdBy: "adrian@emerginglobal.com", createdAt: "Sep 29, 2025, 11:17 AM" },
-  { name: "Grace PMSNM", createdBy: "adrian@emerginglobal.com", createdAt: "Sep 20, 2025, 9:52 PM" },
-];
+import { Skeleton } from "@/components/ui/skeleton";
+import { useElevenLabsAgents } from "@/hooks/useElevenLabsMetrics";
+import { useAuth } from "@/hooks/useAuth";
+import { filterAgentsForUser, isAgentAccessRestricted } from "@/lib/accessControl";
 
 export default function Agents() {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const requiresRestriction = isAgentAccessRestricted(user);
+  const {
+    data: agents,
+    isLoading,
+    isError,
+    refetch,
+  } = useElevenLabsAgents();
+
+  const accessibleAgents = useMemo(
+    () => filterAgentsForUser(agents, user),
+    [agents, user],
+  );
+
+  const visibleAgents = useMemo(
+    () =>
+      requiresRestriction
+        ? accessibleAgents.filter(
+            (agent) => agent.name.trim().toLowerCase() !== "marys no show es",
+          )
+        : accessibleAgents,
+    [accessibleAgents, requiresRestriction],
+  );
+
+  const handleRowClick = (agentId: string) => {
+    navigate(`/agents/${agentId}`);
+  };
+
+  const renderBody = () => {
+    if (isLoading) {
+      return Array.from({ length: 6 }).map((_, index) => (
+        <TableRow key={`skeleton-${index}`}>
+          <TableCell className="py-4">
+            <Skeleton className="h-5 w-48 rounded" />
+          </TableCell>
+          <TableCell className="w-12">
+            <Skeleton className="h-5 w-8 rounded" />
+          </TableCell>
+        </TableRow>
+      ));
+    }
+
+    if (isError) {
+      return (
+        <TableRow>
+          <TableCell colSpan={2} className="py-6 text-center text-sm text-muted-foreground">
+            We couldn&apos;t load your agents.{" "}
+            <Button
+              variant="link"
+              size="sm"
+              className="px-1"
+              onClick={() => refetch({ meta: { force: true } })}
+            >
+              Try again
+            </Button>
+          </TableCell>
+        </TableRow>
+      );
+    }
+
+    if (!visibleAgents || visibleAgents.length === 0) {
+      return (
+        <TableRow>
+          <TableCell colSpan={2} className="py-6 text-center text-sm text-muted-foreground">
+            {requiresRestriction
+              ? "You do not have access to any agents. Contact an administrator if you need additional permissions."
+              : "No agents found yet. Create your first agent to get started."}
+          </TableCell>
+        </TableRow>
+      );
+    }
+
+    return visibleAgents.map((agent) => (
+      <TableRow
+        key={agent.id}
+        className="cursor-pointer hover:bg-muted/40"
+        onClick={() => handleRowClick(agent.id)}
+      >
+        <TableCell className="font-medium text-foreground">{agent.name}</TableCell>
+        <TableCell className="w-12">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 w-8 p-0"
+                onClick={(event) => event.stopPropagation()}
+                aria-label="Agent actions"
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleRowClick(agent.id);
+                }}
+              >
+                View
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={(event) => event.stopPropagation()}>
+                Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={(event) => event.stopPropagation()}>
+                Duplicate
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </TableCell>
+      </TableRow>
+    ));
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto px-6 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="mb-8 flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-foreground mb-2">Agents</h1>
+            <h1 className="mb-2 text-3xl font-bold text-foreground">Agents</h1>
             <p className="text-muted-foreground">Create and manage your AI agents</p>
           </div>
           <div className="flex items-center gap-3">
-            <Button variant="outline">Playground</Button>
-            <Button>
-              <Plus className="w-4 h-4 mr-2" />
+            {!requiresRestriction ? <Button variant="outline">Playground</Button> : null}
+            <Button
+              disabled={requiresRestriction}
+              title={requiresRestriction ? "Contact an administrator to create new agents." : undefined}
+            >
+              <Plus className="mr-2 h-4 w-4" />
               New agent
             </Button>
           </div>
         </div>
 
-        {/* Table */}
-        <div className="border border-border rounded-lg overflow-hidden">
+        <div className="overflow-hidden rounded-lg border border-border">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Created by</TableHead>
-                <TableHead>
-                  <div className="flex items-center gap-1">
-                    Created at
-                    <ChevronDown className="w-4 h-4" />
-                  </div>
-                </TableHead>
                 <TableHead className="w-12"></TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
-              {mockAgents.map((agent, index) => (
-                <TableRow
-                  key={index}
-                  className="cursor-pointer"
-                  onClick={() => navigate(`/agents/${index + 1}`)}
-                >
-                  <TableCell className="font-medium">{agent.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {agent.createdBy}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {agent.createdAt}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-8 w-8 p-0"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={(e) => e.stopPropagation()}>
-                          Duplicate
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          className="text-destructive"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
+            <TableBody>{renderBody()}</TableBody>
           </Table>
         </div>
       </div>
     </div>
   );
 }
+
