@@ -1,3 +1,5 @@
+import { getSupabaseClient } from "@/lib/supabaseClient";
+
 export class SupabaseConfigurationError extends Error {
   constructor(message = "Supabase configuration is missing.") {
     super(message);
@@ -181,4 +183,25 @@ export const parseCsvContent = (
   }
 
   return entries;
+};
+
+export const deleteSupabaseTableRows = async (
+  tableName: string,
+  columnForFullDelete: string,
+): Promise<number> => {
+  const client = getSupabaseClient();
+  const filter = `${columnForFullDelete}.is.null,${columnForFullDelete}.not.is.null`;
+
+  const { error, count } = await client
+    .from(tableName)
+    .delete({ count: "exact" })
+    .or(filter);
+
+  if (error) {
+    throw new Error(
+      `Failed to delete rows from "${tableName}": ${error.message}`,
+    );
+  }
+
+  return count ?? 0;
 };

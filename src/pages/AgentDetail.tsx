@@ -20,6 +20,16 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Table,
   TableBody,
   TableCell,
@@ -39,6 +49,7 @@ import {
   importSupabaseRows,
   isSupabaseConfigured,
   parseCsvContent,
+  deleteSupabaseTableRows,
 } from "@/lib/supabase";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -53,6 +64,7 @@ import {
   RefreshCw,
   Clock,
   Upload,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -271,6 +283,9 @@ export default function AgentDetail() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deleteConfirmationInput, setDeleteConfirmationInput] = useState("");
+  const [isDeletingTable, setIsDeletingTable] = useState(false);
 
   const [batchMode, setBatchMode] = useState(false);
   const [encounterId, setEncounterId] = useState("");
@@ -283,6 +298,7 @@ export default function AgentDetail() {
   const [isStartingSchedule, setIsStartingSchedule] = useState(false);
   const [isManualOpen, setIsManualOpen] = useState(false);
   const [isSchedulerOpen, setIsSchedulerOpen] = useState(true);
+  const deleteConfirmationMatches = deleteConfirmationInput.trim().toLowerCase() === "delete";
   const schedulerQueueRef = useRef<SupabaseRow[]>([]);
   const schedulerTimerRef = useRef<number | null>(null);
   const schedulerStatusRef = useRef<"idle" | "running" | "paused">(schedulerStatus);
@@ -554,6 +570,60 @@ export default function AgentDetail() {
       setIsExporting(false);
     }
   };
+
+  const handleDeleteTable = useCallback(async () => {
+    if (!supabaseReady) {
+      return;
+    }
+
+    if (!deleteConfirmationMatches) {
+      return;
+    }
+
+    setIsDeletingTable(true);
+    try {
+      const removed = await deleteSupabaseTableRows(MARYS_NO_SHOW_TABLE, "encounter_id");
+      await marysTableQuery.refetch();
+      updateSchedulerQueue([]);
+
+      if (removed > 0) {
+        appendSchedulerLog(
+          `${MARYS_NO_SHOW_DISPLAY_NAME} table cleared (${removed.toLocaleString()} record${
+            removed === 1 ? "" : "s"
+          } removed).`,
+        );
+      }
+
+      toast({
+        title: removed > 0 ? "Supabase table cleared" : "Table already empty",
+        description:
+          removed > 0
+            ? `${removed.toLocaleString()} record${removed === 1 ? "" : "s"} removed from Supabase.`
+            : `No records were found in ${MARYS_NO_SHOW_DISPLAY_NAME}.`,
+      });
+
+      setDeleteConfirmationInput("");
+      setIsDeleteDialogOpen(false);
+    } catch (error) {
+      toast({
+        title: "Failed to delete records",
+        description:
+          error instanceof Error
+            ? error.message
+            : "We couldn't delete the Supabase data.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeletingTable(false);
+    }
+  }, [
+    appendSchedulerLog,
+    deleteConfirmationMatches,
+    marysTableQuery.refetch,
+    supabaseReady,
+    toast,
+    updateSchedulerQueue,
+  ]);
 
   const handleManualCall = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -968,6 +1038,78 @@ export default function AgentDetail() {
                     </>
                   )}
                 </Button>
+                <AlertDialog
+                  open={isDeleteDialogOpen}
+                  onOpenChange={(open) => {
+                    if (isDeletingTable && open) {
+                      return;
+                    }
+                    setIsDeleteDialogOpen(open);
+                    if (!open) {
+                      setDeleteConfirmationInput("");
+                    }
+                  }}
+                >
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="gap-2"
+                      disabled={!supabaseReady || isDeletingTable}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete data
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete Supabase data</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action removes every record from the Supabase table “{MARYS_NO_SHOW_DISPLAY_NAME}”.
+                        Type <span className="font-semibold text-foreground">delete</span> to confirm.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="delete-confirmation"
+                        className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                      >
+                        Confirmation
+                      </Label>
+                      <Input
+                        id="delete-confirmation"
+                        placeholder="delete"
+                        value={deleteConfirmationInput}
+                        onChange={(event) => setDeleteConfirmationInput(event.target.value)}
+                        autoComplete="off"
+                        autoCorrect="off"
+                        spellCheck={false}
+                        disabled={isDeletingTable}
+                      />
+                    </div>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel disabled={isDeletingTable}>Cancel</AlertDialogCancel>
+                      <Button
+                        variant="destructive"
+                        onClick={handleDeleteTable}
+                        disabled={!deleteConfirmationMatches || isDeletingTable}
+                        className="gap-2"
+                      >
+                        {isDeletingTable ? (
+                          <>
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Deleting
+                          </>
+                        ) : (
+                          <>
+                            <Trash2 className="h-4 w-4" />
+                            Delete data
+                          </>
+                        )}
+                      </Button>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
                 <input
                   ref={fileInputRef}
                   type="file"
