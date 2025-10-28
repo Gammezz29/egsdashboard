@@ -894,8 +894,8 @@ export default function AgentDetail() {
           </div>
         </div>
 
-        <div className="grid flex-1 gap-6 overflow-hidden lg:grid-cols-12">
-          <Card className="lg:col-span-8 flex h-full flex-col border-border/80 bg-card/90 backdrop-blur shadow-sm">
+        <div className="grid flex-1 min-h-0 gap-6 overflow-hidden lg:grid-cols-12">
+          <Card className="lg:col-span-8 flex h-full min-h-0 flex-col border-border/80 bg-card/90 backdrop-blur shadow-sm">
             <CardHeader className="flex flex-col gap-2 border-b border-border/60 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2 text-lg">
