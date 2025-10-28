@@ -875,8 +875,8 @@ export default function AgentDetail() {
   }
 
   return (
-    <div className="h-screen bg-background">
-      <div className="mx-auto flex h-full w-full max-w-7xl flex-col gap-6 px-6 py-6">
+    <div className="h-screen bg-background overflow-hidden">
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-6 px-6 py-6 overflow-hidden box-border">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <Button
             variant="ghost"
@@ -977,7 +977,7 @@ export default function AgentDetail() {
                 />
               </div>
             </CardHeader>
-            <CardContent className="flex-1 min-h-0 overflow-hidden p-6">
+            <CardContent className="flex flex-1 min-h-0 flex-col p-6">
               {!supabaseReady ? (
                 <Alert variant="destructive">
                   <AlertTitle>Supabase configuration missing</AlertTitle>
@@ -1005,39 +1005,43 @@ export default function AgentDetail() {
                   No rows found in {MARYS_NO_SHOW_DISPLAY_NAME}. Import a CSV file or add entries from Supabase.
                 </div>
               ) : (
-                <div className="flex h-full min-h-0 flex-col">
-                  <ScrollArea className="flex-1 min-h-0 rounded-md border border-border/60">
-                    <div className="min-w-[960px]">
-                      <Table className="min-w-[960px]">
-                        <TableHeader>
-                          <TableRow>
-                            {tableColumns.map((column) => (
-                              <TableHead key={column} className="whitespace-nowrap text-xs uppercase tracking-wide text-muted-foreground">
-                                {column.replaceAll("_", " ")}
-                              </TableHead>
-                            ))}
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {marysTableQuery.data!.map((row, rowIndex) => (
-                            <TableRow key={`marys-row-${rowIndex}`}>
-                              {tableColumns.map((column) => (
-                                <TableCell key={`${rowIndex}-${column}`} className="align-top whitespace-nowrap text-sm">
-                                  {formatCellValue(row[column])}
-                                </TableCell>
+                <div className="flex flex-1 min-h-0 flex-col">
+                  <div className="flex h-full min-h-0 flex-col rounded-md border border-border/60">
+                    <div className="h-full overflow-x-auto">
+                      <div className="h-full min-w-[960px]">
+                        <div className="h-full overflow-y-auto">
+                          <Table className="min-w-[960px]">
+                            <TableHeader>
+                              <TableRow>
+                                {tableColumns.map((column) => (
+                                  <TableHead key={column} className="whitespace-nowrap text-xs uppercase tracking-wide text-muted-foreground">
+                                    {column.replaceAll("_", " ")}
+                                  </TableHead>
+                                ))}
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {marysTableQuery.data!.map((row, rowIndex) => (
+                                <TableRow key={`marys-row-${rowIndex}`}>
+                                  {tableColumns.map((column) => (
+                                    <TableCell key={`${rowIndex}-${column}`} className="align-top whitespace-nowrap text-sm">
+                                      {formatCellValue(row[column])}
+                                    </TableCell>
+                                  ))}
+                                </TableRow>
                               ))}
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
                     </div>
-                  </ScrollArea>
+                  </div>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <div className="lg:col-span-4 flex h-full flex-col gap-6 overflow-hidden">
+          <div className="lg:col-span-4 flex h-full min-h-0 flex-col gap-6 overflow-hidden">
             <Card className="shrink-0 border-border/80 bg-card/90 backdrop-blur shadow-sm">
               <CardHeader className="space-y-3">
                 <button
@@ -1124,7 +1128,7 @@ export default function AgentDetail() {
             <Card
               className={cn(
                 "flex flex-col border-border/80 bg-card/90 backdrop-blur shadow-sm transition-all",
-                isSchedulerOpen ? "h-full" : "shrink-0",
+                isSchedulerOpen ? "" : "shrink-0",
               )}
             >
               <CardHeader className="border-b border-border/60">
@@ -1151,7 +1155,7 @@ export default function AgentDetail() {
                 </button>
               </CardHeader>
               {isSchedulerOpen ? (
-                <CardContent className="flex-1 overflow-auto space-y-6 p-6">
+                <CardContent className="space-y-6 p-6">
                   <div className="grid gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="calls-per-batch">Calls per batch</Label>
