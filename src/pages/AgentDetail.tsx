@@ -977,7 +977,7 @@ export default function AgentDetail() {
                 />
               </div>
             </CardHeader>
-            <CardContent className="flex-1 overflow-hidden p-6">
+            <CardContent className="flex-1 min-h-0 overflow-hidden p-6">
               {!supabaseReady ? (
                 <Alert variant="destructive">
                   <AlertTitle>Supabase configuration missing</AlertTitle>
@@ -1005,8 +1005,8 @@ export default function AgentDetail() {
                   No rows found in {MARYS_NO_SHOW_DISPLAY_NAME}. Import a CSV file or add entries from Supabase.
                 </div>
               ) : (
-                <div className="flex h-full flex-col">
-                  <ScrollArea className="flex-1 rounded-md border border-border/60">
+                <div className="flex h-full min-h-0 flex-col">
+                  <ScrollArea className="flex-1 min-h-0 rounded-md border border-border/60">
                     <div className="min-w-[960px]">
                       <Table className="min-w-[960px]">
                         <TableHeader>
