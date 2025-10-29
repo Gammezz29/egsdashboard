@@ -20,12 +20,34 @@ export const inviteDashboardUser = async (
     throw new Error("Seleccione o ingrese un rol para el usuario.");
   }
 
-  const redirectUrl =
-    typeof options?.redirectTo === "string" && options.redirectTo.trim().length > 0
-      ? options.redirectTo.trim()
-      : typeof window !== "undefined"
-        ? `${window.location.origin}/login`
-        : undefined;
+  const resolveRedirectUrl = (): string => {
+    if (typeof options?.redirectTo === "string" && options.redirectTo.trim().length > 0) {
+      return options.redirectTo.trim();
+    }
+
+    const envRedirect =
+      typeof import.meta.env.VITE_SUPABASE_INVITE_REDIRECT === "string"
+        ? import.meta.env.VITE_SUPABASE_INVITE_REDIRECT.trim()
+        : "";
+    if (envRedirect) {
+      return envRedirect;
+    }
+
+    if (typeof window !== "undefined") {
+      const origin = window.location.origin;
+      if (origin.includes("localhost")) {
+        return `${origin}/login`;
+      }
+
+      if (origin.includes("dashboard.egsai.dev")) {
+        return `${origin}/login`;
+      }
+    }
+
+    return "https://dashboard.egsai.dev/login";
+  };
+
+  const redirectUrl = resolveRedirectUrl();
 
   const client = getAdminSupabaseClient();
 
