@@ -65,6 +65,7 @@ export type ElevenLabsCall = {
   status: ElevenLabsCallStatus;
   metadata?: Record<string, unknown>;
   metadataSearchText?: string;
+  accountNumber?: string | null;
 };
 
 export type ElevenLabsTranscriptEntry = {
@@ -250,54 +251,188 @@ const collectMetadataSegments = (
     return [];
   }
 
-  const record = value as Record<string, unknown>;
   const segments: Record<string, unknown>[] = [];
+  const visited = new WeakSet<Record<string, unknown>>();
 
-  if (includeRoot) {
-    segments.push(record);
-  }
+  const visit = (node: Record<string, unknown>, includeSelf: boolean) => {
+    if (visited.has(node)) {
+      return;
+    }
 
-  const metadataCandidate = record["metadata"];
-  if (isRecord(metadataCandidate)) {
-    segments.push(metadataCandidate);
-  }
+    visited.add(node);
 
-  const clientDataCandidates = [
-    record["client_data"],
-    record["clientData"],
-    record["client data"],
-  ];
+    if (includeSelf) {
+      segments.push(node);
+    }
 
-  for (const candidate of clientDataCandidates) {
-    if (isRecord(candidate)) {
+    const metadataCandidate = node["metadata"];
+    if (isRecord(metadataCandidate)) {
+      visit(metadataCandidate, true);
+    }
+
+    const clientDataCandidates = [
+      node["client_data"],
+      node["clientData"],
+      node["client data"],
+    ];
+
+    for (const candidate of clientDataCandidates) {
+      if (isRecord(candidate)) {
+        segments.push({
+          clientData: candidate,
+          client_data: candidate,
+        });
+        visit(candidate, true);
+        break;
+      }
+    }
+
+    const varsCandidate = node["vars"];
+    if (isRecord(varsCandidate)) {
+      segments.push({ vars: varsCandidate });
+      visit(varsCandidate, true);
+    }
+
+    const dynamicVariablesCandidate =
+      node["dynamic_variables"] ??
+      node["dynamicVariables"] ??
+      node["scene_dynamic_variables"] ??
+      node["sceneDynamicVariables"];
+    if (isRecord(dynamicVariablesCandidate)) {
       segments.push({
-        clientData: candidate,
-        client_data: candidate,
+        dynamicVariables: dynamicVariablesCandidate,
+        dynamic_variables: dynamicVariablesCandidate,
       });
+      visit(dynamicVariablesCandidate, true);
+    }
+
+    const clientCandidate = node["client"];
+    if (isRecord(clientCandidate)) {
+      segments.push({ client: clientCandidate });
+      visit(clientCandidate, true);
+    }
+
+    Object.values(node).forEach((child) => {
+      if (Array.isArray(child)) {
+        child.forEach((entry) => {
+          if (isRecord(entry)) {
+            visit(entry, false);
+          }
+        });
+        return;
+      }
+
+      if (isRecord(child)) {
+        visit(child, false);
+      }
+    });
+  };
+
+  visit(value as Record<string, unknown>, includeRoot);
+
+  return segments;
+};
+
+const ACCOUNT_NUMBER_KEY_SET = new Set([
+  "accountnumber",
+  "acctnumber",
+  "accountid",
+  "acctid",
+  "clientaccountnumber",
+]);
+
+const KEY_FIELD_CANDIDATES = ["key", "name", "field", "variable", "label", "id"];
+const VALUE_FIELD_CANDIDATES = ["value", "val", "data", "text", "content", "answer"];
+
+const normaliseIdentifier = (value: string) => value.replace(/[\s_-]/g, "").toLowerCase();
+
+const isPrimitiveValue = (value: unknown): value is string | number =>
+  typeof value === "string" || typeof value === "number";
+
+const extractAccountNumberFromRecord = (record: Record<string, unknown>): string | null => {
+  for (const [key, value] of Object.entries(record)) {
+    if (typeof key === "string" && ACCOUNT_NUMBER_KEY_SET.has(normaliseIdentifier(key))) {
+      if (isPrimitiveValue(value)) {
+        return String(value);
+      }
+    }
+  }
+
+  let identifiedKey: string | undefined;
+  for (const candidate of KEY_FIELD_CANDIDATES) {
+    const rawKey = record[candidate];
+    if (typeof rawKey === "string" && rawKey.trim().length > 0) {
+      identifiedKey = rawKey.trim();
       break;
     }
   }
 
-  const varsCandidate = record["vars"];
-  if (isRecord(varsCandidate)) {
-    segments.push({ vars: varsCandidate });
+  if (identifiedKey && ACCOUNT_NUMBER_KEY_SET.has(normaliseIdentifier(identifiedKey))) {
+    for (const candidate of VALUE_FIELD_CANDIDATES) {
+      if (candidate in record) {
+        const rawValue = record[candidate];
+        if (isPrimitiveValue(rawValue)) {
+          return String(rawValue);
+        }
+      }
+    }
+
+    const valuesCandidate = record.values;
+    if (Array.isArray(valuesCandidate) && valuesCandidate.length === 1) {
+      const [first] = valuesCandidate;
+      if (isPrimitiveValue(first)) {
+        return String(first);
+      }
+    }
   }
 
-  const dynamicVariablesCandidate =
-    record["dynamic_variables"] ?? record["dynamicVariables"];
-  if (isRecord(dynamicVariablesCandidate)) {
-    segments.push({
-      dynamicVariables: dynamicVariablesCandidate,
-      dynamic_variables: dynamicVariablesCandidate,
-    });
+  return null;
+};
+
+const extractAccountNumber = (value: unknown): string | null => {
+  if (value == null) {
+    return null;
   }
 
-  const clientCandidate = record["client"];
-  if (isRecord(clientCandidate)) {
-    segments.push({ client: clientCandidate });
+  const visited = new WeakSet<Record<string, unknown>>();
+  const stack: unknown[] = [value];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current == null) {
+      continue;
+    }
+
+    if (Array.isArray(current)) {
+      for (const entry of current) {
+        if (entry != null) {
+          stack.push(entry);
+        }
+      }
+      continue;
+    }
+
+    if (isRecord(current)) {
+      if (visited.has(current)) {
+        continue;
+      }
+
+      visited.add(current);
+
+      const extracted = extractAccountNumberFromRecord(current);
+      if (extracted) {
+        return extracted;
+      }
+
+      Object.values(current).forEach((child) => {
+        if (child != null) {
+          stack.push(child);
+        }
+      });
+    }
   }
 
-  return segments;
+  return null;
 };
 
 const mergeMetadataSegments = (
@@ -509,8 +644,11 @@ const toHistoryCall = (
       : `conversation-${agentId ?? "unknown"}-${Date.now()}-${fallbackIndex}`;
 
   const metadata = resolveCallMetadata({ value: conversation });
+  const conversationAccountNumber = extractAccountNumber(conversation);
   const metadataSearchText =
     metadata != null ? buildMetadataSearchText(metadata) : undefined;
+  const accountNumber =
+    extractAccountNumber(metadata) ?? conversationAccountNumber ?? null;
 
   return {
     id: conversationId && conversationId.length > 0 ? conversationId : fallbackId,
@@ -521,6 +659,7 @@ const toHistoryCall = (
     status: normaliseStatus(conversation),
     ...(metadata ? { metadata } : {}),
     ...(metadataSearchText ? { metadataSearchText } : {}),
+    accountNumber,
   };
 };
 
@@ -1535,6 +1674,7 @@ export const fetchElevenLabsConversationDetails = async (
     metadata != null
       ? buildMetadataSearchText(metadata)
       : call.metadataSearchText;
+  const accountNumber = extractAccountNumber(metadata) ?? call.accountNumber ?? null;
   const startedAt =
     call.startedAt ??
     (typeof payload.call_started_at === "string" ? payload.call_started_at : null);
@@ -1554,6 +1694,7 @@ export const fetchElevenLabsConversationDetails = async (
     transcript,
     ...(metadata ? { metadata } : {}),
     ...(metadataSearchText ? { metadataSearchText } : {}),
+    accountNumber,
   };
 };
 

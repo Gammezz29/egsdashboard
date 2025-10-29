@@ -99,7 +99,7 @@ export function HistoryCard({
   isDownloading = false,
   isDeleting = false,
 }: HistoryCardProps) {
-  const { agentName, status, startedAt, durationSeconds } = call;
+  const { agentName, status, startedAt, durationSeconds, accountNumber } = call;
 
   const startedDate = startedAt ? new Date(startedAt) : null;
   const absoluteDate = startedDate ? dateTimeFormatter.format(startedDate) : "Date unavailable";
@@ -118,6 +118,11 @@ export function HistoryCard({
               <Badge variant="outline" className={statusMeta.className}>
                 {statusMeta.label}
               </Badge>
+              {accountNumber ? (
+                <span className="rounded-md border border-border/60 bg-muted/20 px-2 py-0.5 text-xs font-mono text-foreground">
+                  {accountNumber}
+                </span>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <span>{absoluteDate}</span>

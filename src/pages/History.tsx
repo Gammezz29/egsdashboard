@@ -32,6 +32,7 @@ import {
   useElevenLabsCallHistory,
   useDeleteElevenLabsCall,
 } from "@/hooks/useElevenLabsMetrics";
+import { fetchElevenLabsConversationDetails } from "@/lib/elevenLabs";
 import { useAuth } from "@/hooks/useAuth";
 import {
   ensureAgentIdForUser,
@@ -343,6 +344,7 @@ const CallDetailsDialog = ({
   const startedLabel = formatDisplayDate(startedDisplay);
   const durationLabel = formatDuration(details?.durationSeconds ?? call?.durationSeconds ?? 0);
   const statusLabel = details?.statusLabel ?? statusMeta.label;
+  const accountNumber = details?.accountNumber ?? call?.accountNumber ?? null;
   const clientData = extractClientData(details?.metadata);
 
   const handleTabChange = (value: string) => {
@@ -404,6 +406,14 @@ const CallDetailsDialog = ({
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Call ID</p>
                   <p className="text-sm font-mono text-foreground">{details.id}</p>
                 </div>
+                {accountNumber ? (
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Account #
+                    </p>
+                    <p className="text-sm font-mono text-foreground">{accountNumber}</p>
+                  </div>
+                ) : null}
               </div>
 
               {clientData ? (
@@ -621,25 +631,95 @@ const History = () => {
 
   const searchValue = searchTerm.trim().toLowerCase();
 
+  // State to store fetched account numbers
+  const [accountNumbers, setAccountNumbers] = useState<Record<string, string>>({});
+
+  // Fetch account numbers for visible calls in the background
+  useEffect(() => {
+    if (allCalls.length === 0) return;
+
+    const fetchAccountNumbers = async () => {
+      console.log('[History] Starting to fetch account numbers for', allCalls.length, 'calls');
+
+      // Fetch in batches of 5 at a time
+      const batchSize = 5;
+      for (let i = 0; i < Math.min(allCalls.length, 50); i += batchSize) {
+        const batch = allCalls.slice(i, i + batchSize);
+
+        const results = await Promise.allSettled(
+          batch.map(async (call) => {
+            try {
+              // Use the SAME function that works in the overview tab
+              const details = await fetchElevenLabsConversationDetails(call.id);
+              console.log('[History] Fetched details for call:', call.id.substring(0, 20), 'Account:', details.accountNumber);
+              return { callId: call.id, accountNumber: details.accountNumber };
+            } catch (error) {
+              console.error('[History] Failed to fetch details for call:', call.id.substring(0, 20), error);
+              return null;
+            }
+          })
+        );
+
+        // Update state with found account numbers
+        const newAccountNumbers: Record<string, string> = {};
+        results.forEach((result) => {
+          if (result.status === 'fulfilled' && result.value?.accountNumber) {
+            newAccountNumbers[result.value.callId] = result.value.accountNumber;
+          }
+        });
+
+        if (Object.keys(newAccountNumbers).length > 0) {
+          console.log('[History] Adding', Object.keys(newAccountNumbers).length, 'account numbers to state');
+          setAccountNumbers(prev => {
+            const updated = { ...prev, ...newAccountNumbers };
+            console.log('[History] State now has', Object.keys(updated).length, 'account numbers');
+            return updated;
+          });
+        }
+
+        // Small delay between batches
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+
+      console.log('[History] Finished fetching account numbers');
+    };
+
+    fetchAccountNumbers();
+  }, [allCalls]);
+
   const visibleCalls = useMemo(() => {
+    // Merge account numbers from state into calls
+    const enrichedCalls = allCalls.map(call => ({
+      ...call,
+      accountNumber: accountNumbers[call.id] || call.accountNumber
+    }));
+
+    console.log('[History] Account numbers state has', Object.keys(accountNumbers).length, 'entries');
+    console.log('[History] First enriched call:', enrichedCalls[0] ? {
+      id: enrichedCalls[0].id.substring(0, 20),
+      accountNumber: enrichedCalls[0].accountNumber
+    } : 'no calls');
+
     if (!searchValue) {
-      return allCalls;
+      return enrichedCalls;
     }
 
-    return allCalls.filter((call) => {
+    return enrichedCalls.filter((call) => {
       const agentName = (call.agentName ?? "").toLowerCase();
       const agentId = call.agentId?.toLowerCase() ?? "";
       const callId = call.id.toLowerCase();
+      const accountNumber = (call.accountNumber ?? "").toLowerCase();
       const metadataText = getMetadataSearchText(call);
 
       return (
         agentName.includes(searchValue) ||
         agentId.includes(searchValue) ||
         callId.includes(searchValue) ||
+        accountNumber.includes(searchValue) ||
         (metadataText !== "" && metadataText.includes(searchValue))
       );
     });
-  }, [allCalls, searchValue]);
+  }, [allCalls, searchValue, accountNumbers]);
 
   const totalLoaded = allCalls.length;
   const isInitialLoading = historyEnabled ? historyQuery.status === "pending" : false;
@@ -780,7 +860,7 @@ const History = () => {
             <Input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search by agent, call, or account ID…"
+              placeholder="Search by agent, call, or account number…"
               className="w-full pl-10"
             />
           </div>
@@ -910,4 +990,5 @@ const History = () => {
 };
 
 export default History;
+
 
