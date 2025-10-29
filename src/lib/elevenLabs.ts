@@ -14,6 +14,13 @@ type Conversation = {
   duration_seconds?: number | null;
   call_successful?: string | boolean | null;
   status?: string | null;
+  metadata?: unknown;
+  client_data?: unknown;
+  clientData?: unknown;
+  vars?: unknown;
+  client?: unknown;
+  dynamic_variables?: unknown;
+  dynamicVariables?: unknown;
 };
 
 type ConversationsResponse = {
@@ -56,6 +63,8 @@ export type ElevenLabsCall = {
   startedAt: string | null;
   durationSeconds: number;
   status: ElevenLabsCallStatus;
+  metadata?: Record<string, unknown>;
+  metadataSearchText?: string;
 };
 
 export type ElevenLabsTranscriptEntry = {
@@ -228,6 +237,117 @@ const formatChartDateLabel = (date: Date) =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value != null && typeof value === "object" && !Array.isArray(value);
 
+type MetadataSource = {
+  value: unknown;
+  includeRoot?: boolean;
+};
+
+const collectMetadataSegments = (
+  value: unknown,
+  includeRoot = false,
+): Record<string, unknown>[] => {
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const record = value as Record<string, unknown>;
+  const segments: Record<string, unknown>[] = [];
+
+  if (includeRoot) {
+    segments.push(record);
+  }
+
+  const metadataCandidate = record["metadata"];
+  if (isRecord(metadataCandidate)) {
+    segments.push(metadataCandidate);
+  }
+
+  const clientDataCandidates = [
+    record["client_data"],
+    record["clientData"],
+    record["client data"],
+  ];
+
+  for (const candidate of clientDataCandidates) {
+    if (isRecord(candidate)) {
+      segments.push({
+        clientData: candidate,
+        client_data: candidate,
+      });
+      break;
+    }
+  }
+
+  const varsCandidate = record["vars"];
+  if (isRecord(varsCandidate)) {
+    segments.push({ vars: varsCandidate });
+  }
+
+  const dynamicVariablesCandidate =
+    record["dynamic_variables"] ?? record["dynamicVariables"];
+  if (isRecord(dynamicVariablesCandidate)) {
+    segments.push({
+      dynamicVariables: dynamicVariablesCandidate,
+      dynamic_variables: dynamicVariablesCandidate,
+    });
+  }
+
+  const clientCandidate = record["client"];
+  if (isRecord(clientCandidate)) {
+    segments.push({ client: clientCandidate });
+  }
+
+  return segments;
+};
+
+const mergeMetadataSegments = (
+  segments: Record<string, unknown>[],
+): Record<string, unknown> | undefined => {
+  if (segments.length === 0) {
+    return undefined;
+  }
+
+  return segments.reduce<Record<string, unknown>>((acc, segment) => {
+    Object.entries(segment).forEach(([key, value]) => {
+      acc[key] = value;
+    });
+    return acc;
+  }, {});
+};
+
+const resolveCallMetadata = (
+  ...sources: MetadataSource[]
+): Record<string, unknown> | undefined => {
+  const segments: Record<string, unknown>[] = [];
+
+  sources.forEach((source) => {
+    if (source.value == null) {
+      return;
+    }
+
+    const extracted = collectMetadataSegments(
+      source.value,
+      source.includeRoot ?? false,
+    );
+
+    if (extracted.length > 0) {
+      segments.push(...extracted);
+    }
+  });
+
+  return mergeMetadataSegments(segments);
+};
+
+const buildMetadataSearchText = (
+  metadata: Record<string, unknown>,
+): string | undefined => {
+  try {
+    return JSON.stringify(metadata).toLowerCase();
+  } catch {
+    return undefined;
+  }
+};
+
 const toFiniteNumber = (value: unknown, fallback = 0): number => {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -388,6 +508,10 @@ const toHistoryCall = (
       ? `conversation-${agentId ?? "unknown"}-${startedAtDate.getTime()}-${fallbackIndex}`
       : `conversation-${agentId ?? "unknown"}-${Date.now()}-${fallbackIndex}`;
 
+  const metadata = resolveCallMetadata({ value: conversation });
+  const metadataSearchText =
+    metadata != null ? buildMetadataSearchText(metadata) : undefined;
+
   return {
     id: conversationId && conversationId.length > 0 ? conversationId : fallbackId,
     agentId,
@@ -395,6 +519,8 @@ const toHistoryCall = (
     startedAt,
     durationSeconds: getDurationSeconds(conversation),
     status: normaliseStatus(conversation),
+    ...(metadata ? { metadata } : {}),
+    ...(metadataSearchText ? { metadataSearchText } : {}),
   };
 };
 
@@ -1401,7 +1527,14 @@ export const fetchElevenLabsConversationDetails = async (
         .filter((entry): entry is ElevenLabsTranscriptEntry => Boolean(entry))
     : [];
 
-  const metadata = isRecord(payload.metadata) ? payload.metadata : undefined;
+  const metadata = resolveCallMetadata(
+    { value: call.metadata, includeRoot: true },
+    { value: payload },
+  );
+  const metadataSearchText =
+    metadata != null
+      ? buildMetadataSearchText(metadata)
+      : call.metadataSearchText;
   const startedAt =
     call.startedAt ??
     (typeof payload.call_started_at === "string" ? payload.call_started_at : null);
@@ -1419,7 +1552,8 @@ export const fetchElevenLabsConversationDetails = async (
     statusLabel: statusLabelCandidate,
     hasAudio,
     transcript,
-    metadata,
+    ...(metadata ? { metadata } : {}),
+    ...(metadataSearchText ? { metadataSearchText } : {}),
   };
 };
 

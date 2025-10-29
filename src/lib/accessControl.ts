@@ -1,6 +1,7 @@
 import type { User } from "@supabase/supabase-js";
 import type { ElevenLabsAgent } from "./elevenLabs";
 
+const ROLE_MASTER = "master";
 const ROLE_MARYS_SUPERVISOR = "marys-supervisor";
 
 const normalise = (value: string): string => {
@@ -52,6 +53,9 @@ export const getUserRole = (user: User | null | undefined): string => {
   const trimmed = raw.trim().toLowerCase();
   return trimmed;
 };
+
+export const isMasterUser = (user: User | null | undefined): boolean =>
+  getUserRole(user) === ROLE_MASTER;
 
 export const isMarysSupervisor = (user: User | null | undefined): boolean =>
   getUserRole(user) === ROLE_MARYS_SUPERVISOR;
@@ -128,3 +132,8 @@ export const ensureAgentIdForUser = (
 
 export const getAllowedMarysAgentNames = (): string[] =>
   Array.from(MARYS_ALLOWED_AGENT_NAMES.values());
+
+export const DASHBOARD_ROLE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: ROLE_MASTER, label: "Master" },
+  { value: ROLE_MARYS_SUPERVISOR, label: "Mary's Supervisor" },
+];

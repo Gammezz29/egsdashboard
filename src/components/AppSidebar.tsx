@@ -1,4 +1,5 @@
 import { Home, History, Settings, Users } from "lucide-react";
+import { useMemo } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import {
@@ -12,6 +13,8 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useAuth } from "@/hooks/useAuth";
+import { isMasterUser } from "@/lib/accessControl";
 
 const items = [
   { title: "Home", url: "/", icon: Home },
@@ -23,8 +26,15 @@ const items = [
 export function AppSidebar() {
   const { open } = useSidebar();
   const location = useLocation();
+  const { user } = useAuth();
 
   const isActive = (path: string) => location.pathname === path;
+  const visibleItems = useMemo(() => {
+    if (isMasterUser(user)) {
+      return items;
+    }
+    return items.filter((item) => item.url !== "/settings");
+  }, [user]);
 
   return (
     <Sidebar className="border-r border-sidebar-border">
@@ -49,7 +59,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Main Menu</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {items.map((item) => (
+              {visibleItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)}>
                     <NavLink to={item.url}>

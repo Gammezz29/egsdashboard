@@ -102,6 +102,183 @@ const formatDisplayDate = (isoDate?: string | null) => {
   return dateTimeFormatter.format(parsed);
 };
 
+const getMetadataSearchText = (call: ElevenLabsCall): string => {
+  if (typeof call.metadataSearchText === "string" && call.metadataSearchText.length > 0) {
+    return call.metadataSearchText;
+  }
+
+  if (!call.metadata) {
+    return "";
+  }
+
+  try {
+    return JSON.stringify(call.metadata).toLowerCase();
+  } catch {
+    return "";
+  }
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value != null && typeof value === "object" && !Array.isArray(value);
+
+const CLIENT_DATA_KEY_SET = new Set([
+  "clientdata",
+  "client_data",
+  "client",
+  "vars",
+  "variables",
+  "dynamicvariables",
+  "dynamicvars",
+  "dynamic_variables",
+  "customvariables",
+  "customvars",
+  "callvars",
+  "inputs",
+]);
+
+const normaliseKeyIdentifier = (key: string) =>
+  key.replace(/[\s_-]/g, "").toLowerCase();
+
+const matchesClientDataKey = (key: string) => {
+  const normalised = normaliseKeyIdentifier(key);
+  if (CLIENT_DATA_KEY_SET.has(normalised)) {
+    return true;
+  }
+
+  return normalised.includes("client") || normalised.includes("var");
+};
+
+const isPrimitiveValue = (value: unknown): value is string | number | boolean =>
+  typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+
+const KEY_FIELD_CANDIDATES = ["key", "name", "field", "variable", "label", "id"];
+const VALUE_FIELD_CANDIDATES = ["value", "val", "data", "text", "content", "answer"];
+
+const normaliseKeyValueRecord = (
+  record: Record<string, unknown>,
+  addPair: (key: string, value: unknown) => void,
+) => {
+  let identifiedKey: string | undefined;
+
+  for (const candidate of KEY_FIELD_CANDIDATES) {
+    const rawKey = record[candidate];
+    if (typeof rawKey === "string" && rawKey.trim().length > 0) {
+      identifiedKey = rawKey.trim();
+      break;
+    }
+  }
+
+  if (!identifiedKey) {
+    return;
+  }
+
+  for (const candidate of VALUE_FIELD_CANDIDATES) {
+    if (candidate in record) {
+      const rawValue = record[candidate];
+      if (isPrimitiveValue(rawValue)) {
+        addPair(identifiedKey, rawValue);
+        return;
+      }
+    }
+  }
+
+  const valuesCandidate = record.values;
+  if (Array.isArray(valuesCandidate) && valuesCandidate.length === 1) {
+    const [first] = valuesCandidate;
+    if (isPrimitiveValue(first)) {
+      addPair(identifiedKey, first);
+    }
+  }
+};
+
+const extractClientData = (
+  metadata: Record<string, unknown> | undefined,
+): Record<string, unknown> | null => {
+  if (!metadata) {
+    return null;
+  }
+
+  const result = new Map<string, unknown>();
+
+  const addPair = (key: string, value: unknown) => {
+    if (typeof key !== "string") {
+      return;
+    }
+
+    const trimmedKey = key.trim();
+    if (!trimmedKey || !isPrimitiveValue(value)) {
+      return;
+    }
+
+    if (!result.has(trimmedKey)) {
+      result.set(trimmedKey, value);
+    }
+  };
+
+  const visit = (
+    value: unknown,
+    includeDirectChildren: boolean,
+    currentKey?: string,
+  ) => {
+    if (value == null) {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((entry) => {
+        if (isPrimitiveValue(entry) && includeDirectChildren) {
+          if (currentKey) {
+            addPair(currentKey, entry);
+          }
+          return;
+        }
+
+        visit(entry, includeDirectChildren, currentKey);
+      });
+      return;
+    }
+
+    if (isRecord(value)) {
+      normaliseKeyValueRecord(value, addPair);
+
+      if (includeDirectChildren) {
+        Object.entries(value).forEach(([entryKey, entryValue]) => {
+          if (isPrimitiveValue(entryValue)) {
+            addPair(entryKey, entryValue);
+          }
+        });
+      }
+
+      Object.entries(value).forEach(([entryKey, entryValue]) => {
+        const shouldInclude = includeDirectChildren || matchesClientDataKey(entryKey);
+        visit(entryValue, shouldInclude, entryKey);
+      });
+
+      return;
+    }
+
+    if (includeDirectChildren && isPrimitiveValue(value) && currentKey) {
+      addPair(currentKey, value);
+    }
+  };
+
+  visit(metadata, false);
+
+  if (result.size === 0) {
+    Object.entries(metadata).forEach(([key, value]) => {
+      if (isPrimitiveValue(value)) {
+        addPair(key, value);
+      }
+    });
+  }
+
+  if (result.size === 0) {
+    return null;
+  }
+
+  return Object.fromEntries(result.entries());
+};
+
 const CallDetailsDialog = ({
   call,
   open,
@@ -166,6 +343,7 @@ const CallDetailsDialog = ({
   const startedLabel = formatDisplayDate(startedDisplay);
   const durationLabel = formatDuration(details?.durationSeconds ?? call?.durationSeconds ?? 0);
   const statusLabel = details?.statusLabel ?? statusMeta.label;
+  const clientData = extractClientData(details?.metadata);
 
   const handleTabChange = (value: string) => {
     const tab = value as CallDetailsTab;
@@ -178,7 +356,7 @@ const CallDetailsDialog = ({
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{details?.agentName ?? call?.agentName ?? "Call details"}</DialogTitle>
-          <DialogDescription>Review recording insights, transcript, and metadata.</DialogDescription>
+          <DialogDescription>Review recording insights, transcript, and client data (dynamic variables).</DialogDescription>
         </DialogHeader>
 
         {detailsQuery.isLoading ? (
@@ -228,12 +406,12 @@ const CallDetailsDialog = ({
                 </div>
               </div>
 
-              {details.metadata && Object.keys(details.metadata).length > 0 ? (
+              {clientData ? (
                 <div className="space-y-2 rounded-lg border border-border/60 bg-muted/10 p-4">
-                  <p className="text-sm font-semibold text-foreground">Metadata</p>
+                  <p className="text-sm font-semibold text-foreground">Client data (dynamic variables)</p>
                   <ScrollArea className="h-32 rounded border border-border/50 bg-background p-3">
                     <pre className="text-xs leading-relaxed text-muted-foreground">
-                      {JSON.stringify(details.metadata, null, 2)}
+                      {JSON.stringify(clientData, null, 2)}
                     </pre>
                   </ScrollArea>
                 </div>
@@ -452,11 +630,13 @@ const History = () => {
       const agentName = (call.agentName ?? "").toLowerCase();
       const agentId = call.agentId?.toLowerCase() ?? "";
       const callId = call.id.toLowerCase();
+      const metadataText = getMetadataSearchText(call);
 
       return (
         agentName.includes(searchValue) ||
         agentId.includes(searchValue) ||
-        callId.includes(searchValue)
+        callId.includes(searchValue) ||
+        (metadataText !== "" && metadataText.includes(searchValue))
       );
     });
   }, [allCalls, searchValue]);
@@ -600,7 +780,7 @@ const History = () => {
             <Input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search by agent or call…"
+              placeholder="Search by agent, call, or account ID…"
               className="w-full pl-10"
             />
           </div>
