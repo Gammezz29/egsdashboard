@@ -639,8 +639,6 @@ const History = () => {
     if (allCalls.length === 0) return;
 
     const fetchAccountNumbers = async () => {
-      console.log('[History] Starting to fetch account numbers for', allCalls.length, 'calls');
-
       // Fetch in batches of 5 at a time
       const batchSize = 5;
       for (let i = 0; i < Math.min(allCalls.length, 50); i += batchSize) {
@@ -651,10 +649,8 @@ const History = () => {
             try {
               // Use the SAME function that works in the overview tab
               const details = await fetchElevenLabsConversationDetails(call.id);
-              console.log('[History] Fetched details for call:', call.id.substring(0, 20), 'Account:', details.accountNumber);
               return { callId: call.id, accountNumber: details.accountNumber };
             } catch (error) {
-              console.error('[History] Failed to fetch details for call:', call.id.substring(0, 20), error);
               return null;
             }
           })
@@ -669,10 +665,8 @@ const History = () => {
         });
 
         if (Object.keys(newAccountNumbers).length > 0) {
-          console.log('[History] Adding', Object.keys(newAccountNumbers).length, 'account numbers to state');
           setAccountNumbers(prev => {
             const updated = { ...prev, ...newAccountNumbers };
-            console.log('[History] State now has', Object.keys(updated).length, 'account numbers');
             return updated;
           });
         }
@@ -680,8 +674,6 @@ const History = () => {
         // Small delay between batches
         await new Promise(resolve => setTimeout(resolve, 200));
       }
-
-      console.log('[History] Finished fetching account numbers');
     };
 
     fetchAccountNumbers();
@@ -693,12 +685,6 @@ const History = () => {
       ...call,
       accountNumber: accountNumbers[call.id] || call.accountNumber
     }));
-
-    console.log('[History] Account numbers state has', Object.keys(accountNumbers).length, 'entries');
-    console.log('[History] First enriched call:', enrichedCalls[0] ? {
-      id: enrichedCalls[0].id.substring(0, 20),
-      accountNumber: enrichedCalls[0].accountNumber
-    } : 'no calls');
 
     if (!searchValue) {
       return enrichedCalls;

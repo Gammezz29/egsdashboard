@@ -69,7 +69,7 @@ export const inviteDashboardUser = async (
         app_metadata: { role: trimmedRole },
       });
     } catch (updateError) {
-      console.warn("No se pudo sincronizar el rol en app_metadata para el usuario invitado.", updateError);
+      // Silent fail on app_metadata sync
     }
   }
 

@@ -203,7 +203,7 @@ const readMetricsCache = (key: string): MetricsCacheEntry | null => {
       return entry;
     }
   } catch (error) {
-    console.warn("Failed to read ElevenLabs metrics cache", error);
+    // Silent fail
   }
 
   return null;
@@ -222,7 +222,7 @@ const writeMetricsCache = (key: string, entry: MetricsCacheEntry) => {
     parsed[key] = entry;
     window.localStorage.setItem(METRICS_CACHE_STORAGE_KEY, JSON.stringify(parsed));
   } catch (error) {
-    console.warn("Failed to update ElevenLabs metrics cache", error);
+    // Silent fail
   }
 };
 
@@ -865,7 +865,6 @@ const loadConversationsForRange = async (
       }
 
       if (cursor === nextCursor) {
-        console.warn("ElevenLabs conversations API returned a repeat cursor; stopping early.");
         break;
       }
 
@@ -922,7 +921,6 @@ const readAgentsCacheFromStorage = (): AgentsCacheEntry | null => {
     agentsStorageCache = parsed;
     return parsed;
   } catch (error) {
-    console.warn("Failed to read ElevenLabs agents cache", error);
     return null;
   }
 };
@@ -937,7 +935,7 @@ const writeAgentsCacheToStorage = (entry: AgentsCacheEntry) => {
   try {
     window.localStorage.setItem(AGENTS_CACHE_STORAGE_KEY, JSON.stringify(entry));
   } catch (error) {
-    console.warn("Failed to update ElevenLabs agents cache", error);
+    // Silent fail
   }
 };
 
@@ -1041,7 +1039,6 @@ const loadAllAgents = async (options?: { force?: boolean }): Promise<ElevenLabsA
         }
 
         if (cursor === nextCursor) {
-          console.warn("ElevenLabs agents API returned a repeat cursor; stopping early.");
           break;
         }
 
@@ -1491,11 +1488,7 @@ export const fetchElevenLabsCallHistory = async (
 ): Promise<ElevenLabsCall[]> => {
   const [conversations, agents] = await Promise.all([
     loadConversationsForRange(filters.range),
-    loadAllAgents().catch((error) => {
-      console.warn(
-        "Failed to load ElevenLabs agents while building call history; continuing without agent names.",
-        error,
-      );
+    loadAllAgents().catch(() => {
       return [] as ElevenLabsAgent[];
     }),
   ]);
@@ -1786,10 +1779,7 @@ export const fetchElevenLabsMetrics = async (
 
       return metrics;
     } catch (error) {
-      console.warn(
-        "Failed to load ElevenLabs metrics via n8n webhook. Falling back to direct API.",
-        error,
-      );
+      // Fall back to direct API
     }
   }
 
