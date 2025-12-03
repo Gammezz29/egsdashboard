@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run build:*)",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd Summit-Demo Bot creation feature in Settings\n\n- New Settings page for master users only\n- Form with Agent Name, Company Website, and Phone Number Location\n- Dropdown with 76+ US cities for Twilio area code selection\n- Integration with n8n webhook for bot creation workflow\n- Handles async bot creation with immediate user feedback\n- Error handling for unavailable phone numbers\n- All UI text in English\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git push:*)",
+      "Bash(git branch:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nRemove all debug console logs for production security\n\n- Removed all console.log, console.warn, console.error statements\n- Silent fail on cache operations and API errors\n- No sensitive data exposed in browser console\n- Maintains all functionality without debug output\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
