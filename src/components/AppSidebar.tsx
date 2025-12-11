@@ -14,11 +14,11 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
-import { isMasterUser, isMarysSupervisor } from "@/lib/accessControl";
+import { isMasterUser, isMarysSupervisor, isAgentRole } from "@/lib/accessControl";
 
 const items = [
   { title: "Home", url: "/", icon: Home },
-  { title: "Agents", url: "/agents", icon: Users },
+  { title: "Agents", url: "/agents", icon: Users, requiredRoles: ["master", "marys-supervisor"] },
   { title: "History", url: "/history", icon: History },
   { title: "Playground", url: "/playground", icon: FlaskConical, requiredRoles: ["master", "marys-supervisor"] },
   { title: "Settings", url: "/settings", icon: Settings, requiredRoles: ["master"] },
@@ -31,7 +31,10 @@ export function AppSidebar() {
 
   const isActive = (path: string) => location.pathname === path;
   const visibleItems = useMemo(() => {
-    const userRole = isMasterUser(user) ? "master" : isMarysSupervisor(user) ? "marys-supervisor" : "user";
+    let userRole = "user";
+    if (isMasterUser(user)) userRole = "master";
+    else if (isMarysSupervisor(user)) userRole = "marys-supervisor";
+    else if (isAgentRole(user)) userRole = "agent";
 
     return items.filter((item) => {
       if (!item.requiredRoles) return true;

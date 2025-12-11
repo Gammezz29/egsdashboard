@@ -41,7 +41,10 @@ import {
   filterAgentsForUser,
   isAgentAccessRestricted,
   isAgentNameAllowedForUser,
+  canDeleteCalls,
+  canDownloadCalls,
 } from "@/lib/accessControl";
+import { logPhiAccess } from "@/lib/auditLog";
 import type { ElevenLabsCall, ElevenLabsCallStatus, MetricsRange } from "@/lib/elevenLabs";
 import { fetchElevenLabsConversationAudio } from "@/lib/elevenLabs";
 import { useToast } from "@/hooks/use-toast";
@@ -683,6 +686,19 @@ const History = () => {
     fetchAccountNumbers();
   }, [allCalls]);
 
+  useEffect(() => {
+    if (allCalls.length > 0) {
+      logPhiAccess(user, {
+        action: "View History",
+        phi_fields_accessed: ["call_recording", "transcript", "metadata", "account_number"],
+        metadata: {
+          call_count: allCalls.length,
+          agent_filter: effectiveAgentId,
+        },
+      });
+    }
+  }, [allCalls.length, user, effectiveAgentId]);
+
   const visibleCalls = useMemo(() => {
     // Merge account numbers from state into calls
     const enrichedCalls = allCalls.map(call => ({
@@ -961,18 +977,20 @@ const History = () => {
                   Select All
                 </label>
               </div>
-              <Button
-                variant="outline"
-                onClick={handleBulkAudioDownload}
-                disabled={selectedCallIds.size === 0 || isBulkDownloading}
-              >
-                {isBulkDownloading ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="mr-2 h-4 w-4" />
-                )}
-                Download Selected Audio ({selectedCallIds.size})
-              </Button>
+              {canDownloadCalls(user) && (
+                <Button
+                  variant="outline"
+                  onClick={handleBulkAudioDownload}
+                  disabled={selectedCallIds.size === 0 || isBulkDownloading}
+                >
+                  {isBulkDownloading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="mr-2 h-4 w-4" />
+                  )}
+                  Download Selected Audio ({selectedCallIds.size})
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -1022,6 +1040,8 @@ const History = () => {
                   onDownload={handleDownload}
                   onTranscript={() => handleOpenDetails(call, "transcript")}
                   onDelete={() => setDeleteTarget(call)}
+                  canDelete={canDeleteCalls(user)}
+                  canDownload={canDownloadCalls(user)}
                   isDownloading={isDownloadingCall(call.id)}
                   isDeleting={isDeletingCall(call.id)}
                   isSelected={selectedCallIds.has(call.id)}
@@ -1038,6 +1058,7 @@ const History = () => {
             </div>
           )
         ) : (
+
           <div className="rounded-lg border border-dashed border-border/60 p-12 text-center">
             <h3 className="mb-2 text-lg font-semibold text-foreground">Access required</h3>
             <p className="text-sm text-muted-foreground">{historyUnavailableMessage}</p>

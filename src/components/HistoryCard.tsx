@@ -87,6 +87,8 @@ interface HistoryCardProps {
   onDownload: (call: ElevenLabsCall) => void;
   onTranscript: (call: ElevenLabsCall) => void;
   onDelete: (call: ElevenLabsCall) => void;
+  canDownload?: boolean;
+  canDelete?: boolean;
   isDownloading?: boolean;
   isDeleting?: boolean;
   isSelected?: boolean;
@@ -99,6 +101,8 @@ export function HistoryCard({
   onDownload,
   onTranscript,
   onDelete,
+  canDownload = true,
+  canDelete = true,
   isDownloading = false,
   isDeleting = false,
   isSelected = false,
@@ -151,7 +155,7 @@ export function HistoryCard({
                 <span>{durationLabel}</span>
               </div>
             </div>
-          </div> {/* This is the missing closing tag */}
+          </div>
 
           <div className="flex items-center gap-2 md:justify-end">
             <Button
@@ -163,16 +167,18 @@ export function HistoryCard({
             >
               <Play className="h-4 w-4" />
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-9 w-9"
-              onClick={() => onDownload(call)}
-              aria-label="Download audio"
-              disabled={isDownloading}
-            >
-              <Download className="h-4 w-4" />
-            </Button>
+            {canDownload && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-9 w-9"
+                onClick={() => onDownload(call)}
+                aria-label="Download audio"
+                disabled={isDownloading}
+              >
+                <Download className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               size="icon"
               variant="ghost"
@@ -182,19 +188,19 @@ export function HistoryCard({
             >
               <FileText className="h-4 w-4" />
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-9 w-9 text-destructive hover:text-destructive"
-              onClick={() => onDelete(call)}
-              aria-label="Delete call"
-              disabled={isDeleting}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            {canDelete && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-9 w-9 text-destructive hover:text-destructive"
+                onClick={() => onDelete(call)}
+                aria-label="Delete call"
+                disabled={isDeleting}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            )}
           </div>
         </div>
-      </CardContent>
-    </Card>
-  );
+        );
 }

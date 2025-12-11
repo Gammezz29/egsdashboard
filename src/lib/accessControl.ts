@@ -3,6 +3,7 @@ import type { ElevenLabsAgent } from "./elevenLabs";
 
 const ROLE_MASTER = "master";
 const ROLE_MARYS_SUPERVISOR = "marys-supervisor";
+const ROLE_AGENT = "agent";
 
 const normalise = (value: string): string => {
   const trimmed = value.trim().toLowerCase();
@@ -60,8 +61,21 @@ export const isMasterUser = (user: User | null | undefined): boolean =>
 export const isMarysSupervisor = (user: User | null | undefined): boolean =>
   getUserRole(user) === ROLE_MARYS_SUPERVISOR;
 
+export const isAgentRole = (user: User | null | undefined): boolean =>
+  getUserRole(user) === ROLE_AGENT;
+
 export const isAgentAccessRestricted = (user: User | null | undefined): boolean =>
-  isMarysSupervisor(user);
+  isMarysSupervisor(user) || isAgentRole(user);
+
+export const canDeleteCalls = (user: User | null | undefined): boolean =>
+  !isAgentRole(user);
+
+export const canDownloadCalls = (user: User | null | undefined): boolean =>
+  !isAgentRole(user);
+
+export const canViewAgentsPage = (user: User | null | undefined): boolean =>
+  !isAgentRole(user);
+
 
 export const filterAgentsForUser = (
   agents: ElevenLabsAgent[] | undefined,
