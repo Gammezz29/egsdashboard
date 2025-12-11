@@ -616,7 +616,7 @@ const History = () => {
 
     const deduped = new Map<string, ElevenLabsCall>();
     historyQuery.data.pages.forEach((page) => {
-      page.items.forEach((call) => {
+      page.items.forEach((call: ElevenLabsCall) => {
         deduped.set(call.id, call);
       });
     });
@@ -728,7 +728,7 @@ const History = () => {
   }, [allCalls, searchValue, accountNumbers]);
 
   const totalLoaded = allCalls.length;
-  const isInitialLoading = historyEnabled ? historyQuery.status === "pending" : false;
+  const isInitialLoading = historyEnabled ? historyQuery.isPending : false;
   const historyError = historyEnabled ? (historyQuery.error as Error | null) : null;
   const hasMore = historyEnabled ? historyQuery.hasNextPage ?? false : false;
   const isFetchingMore = historyEnabled ? historyQuery.isFetchingNextPage : false;

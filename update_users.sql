@@ -7,7 +7,7 @@ WHERE email ILIKE '%francisco.gamez%' OR email ILIKE '%roberto.lopez%';
 -- Update roles for Agents (Restricted Access)
 UPDATE auth.users
 SET raw_user_meta_data = 
-  COALESCE(raw_user_meta_data, '{}'::jsonb) || '{"role": "agent"}'::jsonb
+  COALESCE(raw_user_meta_data, '{}'::jsonb) || '{"role": "agent-marys"}'::jsonb
 WHERE email ILIKE '%francisco.marmolejo%' 
    OR email ILIKE '%andres.belloso%'
    OR email ILIKE '%eduardo.garcia%';

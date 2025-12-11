@@ -14,7 +14,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
-import { isMasterUser, isMarysSupervisor, isAgentRole } from "@/lib/accessControl";
+import { isMasterUser, isMarysSupervisor, isAgentMarys } from "@/lib/accessControl";
 
 const items = [
   { title: "Home", url: "/", icon: Home },
@@ -34,7 +34,7 @@ export function AppSidebar() {
     let userRole = "user";
     if (isMasterUser(user)) userRole = "master";
     else if (isMarysSupervisor(user)) userRole = "marys-supervisor";
-    else if (isAgentRole(user)) userRole = "agent";
+    else if (isAgentMarys(user)) userRole = "agent-marys";
 
     return items.filter((item) => {
       if (!item.requiredRoles) return true;
