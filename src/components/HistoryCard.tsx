@@ -202,5 +202,7 @@ export function HistoryCard({
             )}
           </div>
         </div>
-        );
+      </CardContent>
+    </Card>
+  );
 }
